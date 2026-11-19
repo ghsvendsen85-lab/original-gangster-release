@@ -87,6 +87,17 @@ export function JobCardPanel() {
   const chosenType = jc.opts.businessTypeId ? BUILDING_BY_ID[jc.opts.businessTypeId] : null;
   const chosenFront = jc.opts.frontBuildingId != null ? w.buildings[jc.opts.frontBuildingId] : null;
 
+  // The illegal businesses, best cover first: matched against the chosen front,
+  // or else against the best free front on the block. Stars as text, since an
+  // <option> can only hold text.
+  const freeFronts = land ? blockFronts.filter((f) => f.hidesId == null || f.hidesId === land.id) : [];
+  const matchFronts = chosenFront && freeFronts.some((f) => f.id === chosenFront.id) ? [chosenFront] : freeFronts;
+  const illegalMatch = (typeId: string) => matchFronts.length ? Math.max(...matchFronts.map((f) => coverQuality(typeId, f.typeId))) : null;
+  const businessChoices = (isCentreLot ? ILLEGAL_TYPES.filter((t) => t.id !== 'office') : ESTABLISHABLE_TYPES)
+    .map((t, i) => ({ t, i, match: isCentreLot ? illegalMatch(t.id) : null }))
+    .sort((a, b) => (b.match ?? 0) - (a.match ?? 0) || a.i - b.i);
+  const starText = (q: number) => { const n = Math.round(q * 5); return '★'.repeat(n) + '☆'.repeat(5 - n); };
+
   // What the order will cost when the crew gets there, shown before it is sent.
   const price = jc.type === 'buyPremises' && land ? buildingValue(w, land)
     : jc.type === 'setUpBusiness' && chosenType ? chosenType.cost : null;
@@ -270,9 +281,9 @@ export function JobCardPanel() {
               <Kicker style={{ marginBottom: 6 }}>{isCentreLot ? 'Illegal business · centre lot' : 'Legal business'}</Kicker>
               <select aria-label="Business type" className="text-input" value={jc.opts.businessTypeId ?? ''} onChange={(e) => updateOpts({ businessTypeId: e.target.value })}>
                 <option value="">Choose a business…</option>
-                {(isCentreLot ? ILLEGAL_TYPES.filter((t) => t.id !== 'office') : ESTABLISHABLE_TYPES).map((t) => (
+                {businessChoices.map(({ t, match }) => (
                   <option key={t.id} value={t.id}>
-                    {t.name} — {money(t.cost)}
+                    {t.name} — {money(t.cost)}{match != null ? `  ${starText(match)}` : ''}
                   </option>
                 ))}
               </select>

@@ -2,7 +2,7 @@ import type {WeaponId} from '../sim/types';
 import type {CharacterAction} from './characterActions';
 import {SHOOT_DURATION} from './combatMotionTiming';
 
-export const longGun=(weapon?:WeaponId)=>weapon==='rifle'||weapon==='shotgun'||weapon==='tommy';
+export const longGun=(weapon?:WeaponId)=>weapon==='rifle'||weapon==='shotgun'||weapon==='tommy'||weapon==='bar';
 export const drawDuration=(weapon?:WeaponId)=>longGun(weapon)?61/30:2;
 export const holsterDuration=(weapon?:WeaponId)=>longGun(weapon)?2.3:2;
 export const handlingAction=(action?:CharacterAction)=>!!action&&['draw','holster','ready'].includes(action.kind);

@@ -98,7 +98,7 @@ export function useGameKeyboard() {
           s.setMessageBox(box);
           return;
         }
-        if (e.key >= '1' && e.key <= '8') {
+        if (e.key >= '1' && e.key <= '9') {
           // Cycle through a crew's people on the street, centring on each in turn.
           const teamId = gang.teamIds[Number(e.key) - 1];
           const team = teamId != null ? world.teams[teamId] : null;
@@ -190,7 +190,7 @@ export function useGameKeyboard() {
         default:
           break;
       }
-      if (e.key >= '1' && e.key <= '8' && planning) {
+      if (e.key >= '1' && e.key <= '9' && planning) {
         const teamId = gang.teamIds[Number(e.key) - 1];
         if (teamId != null) {
           s.selectTeam(teamId);

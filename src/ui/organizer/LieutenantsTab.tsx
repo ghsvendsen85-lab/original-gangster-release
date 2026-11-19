@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type DragEvent } from 'react';
 import { act, useGame } from '../../app/store';
 import {
   assaultPrisoner,
@@ -12,15 +12,16 @@ import {
   repeatOrder,
   sackPerson,
 } from '../../sim/api';
-import { MINUTES_PER_WEEK, ORDERS, ORDER_GROUPS } from '../../sim/constants';
-import type { ID, Order, Team, WorldState } from '../../sim/types';
+import { MINUTES_PER_WEEK, ORDERS, ORDER_GROUPS, maxTeams } from '../../sim/constants';
+import type { ID, Order, OrderType, Team, WorldState } from '../../sim/types';
 import { buildingName, money, placeName } from '../../sim/world';
 import { buildingMapIntel, knownShopkeeper } from '../../sim/mapIntel';
 import { ConfirmDialog, Dial, Empty, Hint, Icon, Kicker, Pill, SkillList, Stamp } from '../common';
 import { Portrait } from '../Portrait';
 import { resourceDragProps, useResourceDrop } from '../resourceDrag';
 import { Advisor } from './Advisor';
-import { ABSENT, PayRoll, hours } from './RightSheet';
+import { ABSENT, PayRoll, hours, orderCost } from './RightSheet';
+import { orderSkillText } from '../../sim/orderSkills';
 
 type Mode = 'orders' | 'reports';
 
@@ -122,8 +123,13 @@ export function LieutenantsTab() {
 
   const [mode, setMode] = useState<Mode>('orders');
   const [showSkills, setShowSkills] = useState(false);
-  const [teamDetailsOpen, setTeamDetailsOpen] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
+  /** The order group whose orders are listed in their own box under the Orders box; clicking it again closes it. */
+  const [orderGroup, setOrderGroup] = useState<(typeof ORDER_GROUPS)[number]['id'] | null>(null);
+  // The box opens below the Orders box, often past the bottom of the page: bring it into view.
+  useEffect(() => {
+    if (orderGroup) document.querySelector('.order-choices')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [orderGroup]);
   const [confirm, setConfirm] = useState<{ text: string; go: () => void } | null>(null);
 
   const w = sim.world;
@@ -132,6 +138,7 @@ export function LieutenantsTab() {
   // The selected team may have been disbanded or lost its lieutenant during
   // the week, so always fall back to one that still exists.
   const team = (selectedTeamId != null ? w.teams[selectedTeamId] : undefined) ?? teams[0];
+  // The whole lieutenant view takes hoods, weapons and vehicles dragged from the right-hand window.
   const [dropProps, dropOver] = useResourceDrop(team ? { kind: 'team', teamId: team.id } : null);
   // The map stops marking an order once the page moves on to another crew or to the reports.
   useEffect(() => () => useGame.getState().setReviewOrder(null), [team?.id, mode]);
@@ -199,136 +206,7 @@ export function LieutenantsTab() {
     });
   };
 
-  return (
-    <div className="lieutenant-planning">
-      {/* ------------------------------------------------ team details panel */}
-      {lt && (
-        <section className={`team-panel${dropOver ? ' drop-over' : ''}`} aria-label="Selected lieutenant" {...dropProps}>
-          <input aria-label="Crew name" className="team-name" value={team.name} onChange={(e) => rename(e.target.value)} title="Click to rename the team" spellCheck={false} />
-          <div className="team-head">
-            <div className="avatar">
-              <Portrait person={lt} gang={gang} size={64} />
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <div className="row" style={{ gap: 12, alignItems: 'center' }}>
-                <h3 className={lt.pay < lt.payDemand ? 'unhappy' : ''}>{lt.name}</h3>
-                <Dial pct={timePct} size={36} />
-              </div>
-              <div className="counters">
-                <span title="The lieutenant leads this crew; the hoods serve under them">
-                  <Icon name="groups/personnel" size={16} />
-                  1 lieutenant + <b>{members.length}</b> {members.length === 1 ? 'hood' : 'hoods'}
-                </span>
-                <span title="Weapons in the team's possession">
-                  <Icon name="skills/firearms" size={16} />
-                  <b>{guns}</b> {guns === 1 ? 'weapon' : 'weapons'}
-                </span>
-                <span title="Vehicles at the team's disposal">
-                  <Icon name="vehicles/coupe" size={16} />
-                  <b>{cars}</b> {cars === 1 ? 'vehicle' : 'vehicles'}
-                </span>
-              </div>
-              <div className="row" style={{ gap: 6, marginTop: 8 }}>
-                <span className={`tag ${lt.loyalty > 60 ? 'good' : lt.loyalty > 30 ? 'warn' : 'bad'}`}>Loyalty {Math.round(lt.loyalty)}</span>
-                <span className="tag">Wanted {Math.round(lt.wanted)}</span>
-                {lt.status !== 'active' && (
-                  <span className="tag bad">
-                    <Icon name={`status/${lt.status}`} size={12} /> {ABSENT[lt.status] ?? lt.status}
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className={`pay-lines${lt.pay < lt.payDemand ? ' unhappy' : ''}`}>
-              <Kicker>Wants {money(lt.payDemand)}</Kicker>
-              <b>{money(lt.pay)}</b>
-              <Kicker>a week</Kicker>
-            </div>
-          </div>
-
-          {payOpen && <PayRoll person={lt} onClose={() => setPayOpen(false)} />}
-
-          <div className="team-buttons">
-            <button className="btn" onClick={() => setConfirm({ text: `Sack ${lt.name}? The team goes back to the pool, and he goes back on the street with a grudge.`, go: () => notify(act((s) => sackPerson(s.world, gang.id, lt.id))!) })}>
-              Sack
-            </button>
-            <button className="btn danger" disabled={!!outOfReach(lt)} title={outOfReach(lt) ? `${lt.name} is ${outOfReach(lt)}: nobody of yours can get at him there` : undefined}
-              onClick={() => setConfirm({ text: `Have ${lt.name} killed? The police will not look into it, but your other lieutenants will want more money.`, go: () => notify(act((s) => killMember(s.world, gang.id, lt.id))!) })}>
-              Kill
-            </button>
-            <button className="btn" title="Send the lieutenant and the team back to the pool" onClick={() => setConfirm({ text: `Demote ${lt.name}? His crew goes back to the pool, its orders are cancelled, and its weapons and cars go back to the cache.`, go: () => notify(act((s) => demote(s.world, gang.id, team.id))!) })}>
-              Demote
-            </button>
-            <button aria-pressed={showSkills} className={`btn${showSkills ? ' on' : ''}`} onClick={() => { setShowSkills(!showSkills); setTeamDetailsOpen(true); }} title="Swap the paper between the team and the lieutenant's skills">
-              {showSkills ? 'Team' : 'Skills'}
-            </button>
-            <button aria-expanded={payOpen} className={`btn${payOpen ? ' on' : ''}`} onClick={() => setPayOpen(!payOpen)}>
-              Pay
-            </button>
-            <button
-              className={`btn${pickMode?.kind === 'lieutenantArea' ? ' on' : ''}`}
-              onClick={() => {
-                const on = pickMode?.kind === 'lieutenantArea';
-                useGame.getState().selectTeam(team.id);
-                useGame.getState().toggleOverlay('lieutenant');
-                setCollapsed(!on);
-              }}
-            >
-              <Icon name="overlays/lieutenant" size={14} /> {pickMode?.kind === 'lieutenantArea' ? 'Done' : `Territory · ${team.allocatedBlockIds.length}`}
-            </button>
-          </div>
-
-          <details className="team-roster" open={teamDetailsOpen} onToggle={e => setTeamDetailsOpen(e.currentTarget.open)}>
-            <summary>{showSkills ? 'Lieutenant skills' : `Crew · ${members.length+1} people · view ${members.length} hood${members.length===1?'':'s'}`}{members.some(m => m.status !== 'active') && ' · members absent'}</summary>
-          <div className={`paper-strip${showSkills ? ' skills-strip' : ''}`} tabIndex={0} role="region" aria-label={showSkills ? "Lieutenant skills" : "Team members"}>
-            {showSkills ? (
-              <>
-                <Kicker style={{ marginBottom: 6 }}>{lt.name}'s skills</Kicker>
-                <SkillList skills={lt.skills} columns={2} />
-              </>
-            ) : (
-              <>
-                <Kicker style={{ marginBottom: 4 }}>
-                  {team.name} · {members.length} hood{members.length === 1 ? '' : 's'}
-                </Kicker>
-                {members.length === 0 ? (
-                  <Empty>Nobody yet. Open the pool and send some hoods across.</Empty>
-                ) : (
-                  members.map((m) => {
-                    const absent = ABSENT[m.status];
-                    const job = orders.find((o) => o.opts.preferredHoodId === m.id || o.assignedIds.includes(m.id));
-                    return (
-                      <button
-                        key={m.id}
-                        className={`row-line${m.pay < m.payDemand ? ' unhappy' : ''}`}
-                        onClick={() => setSheet(sheet?.kind === 'person' && sheet.id === m.id ? null : { kind: 'person', id: m.id })}
-                        {...resourceDragProps({ kind: 'hood', id: m.id })}
-                        title="Click for his details; drag onto another lieutenant or the pool to move him"
-                      >
-                        <span className="nm">{m.name}</span>
-                        <span className="st">
-                          {absent ? (
-                            <>
-                              <Icon name={`status/${m.status}`} size={13} /> {absent}
-                            </>
-                          ) : job ? (
-                            ORDERS[job.type].name
-                          ) : (
-                            money(m.pay)
-                          )}
-                          {absent && (m.status === 'kidnapped' ? ' · tied to a chair' : m.status === 'arrested' || m.status === 'onTrial' ? ' · behind bars' : '')}
-                        </span>
-                      </button>
-                    );
-                  })
-                )}
-              </>
-            )}
-          </div>
-          </details>
-        </section>
-      )}
-
-      {/* ------------------------------------------------ reports / orders panel */}
+  const ordersPanel = (
       <section className="list-box planning-orders" aria-label="Weekly orders and reports">
         <div className="lb-head">
           <div className="sub-tabs">
@@ -347,7 +225,7 @@ export function LieutenantsTab() {
               <p className="order-instruction">Choose an order group, then an order and its map target.</p>
               <div className="planning-groups">
                 {ORDER_GROUPS.map((g) => (
-                  <button key={g.id} aria-pressed={sheet?.kind === 'orders' && sheet.group === g.id} className={`group-btn${sheet?.kind === 'orders' && sheet.group === g.id ? ' on' : ''}`} onClick={() => setSheet({ kind: 'orders', group: g.id })}>
+                  <button key={g.id} aria-pressed={orderGroup === g.id} aria-expanded={orderGroup === g.id} className={`group-btn${orderGroup === g.id ? ' on' : ''}`} onClick={() => setOrderGroup(orderGroup === g.id ? null : g.id)}>
                     <span className="gb-name">
                       <Icon name={`groups/${g.id}`} size={20} /> {g.name}
                     </span>
@@ -401,21 +279,170 @@ export function LieutenantsTab() {
           <button title="Clipboard (C)" className={`btn sm${sheet?.kind === 'clipboard' ? ' on' : ''}`} onClick={() => setSheet(sheet?.kind === 'clipboard' ? null : { kind: 'clipboard' })}>
             Clipboard
           </button>
-          <span style={{ flex: 1 }} />
-          <button title="Hoods (H)" className={`btn sm${sheet?.kind === 'hoods' ? ' on' : ''}`} onClick={() => setSheet({ kind: 'hoods' })}>
-            <Icon name="groups/personnel" size={13} /> Hoods · {gang.poolIds.length}
-          </button>
-          <button title="Weapons (W)" className={`btn sm${sheet?.kind === 'weapons' ? ' on' : ''}`} onClick={() => setSheet({ kind: 'weapons' })}>
-            <Icon name="weapons/pistol" size={13} /> Weapons
-          </button>
-          <button title="Vehicles (V)" className={`btn sm${sheet?.kind === 'vehicles' ? ' on' : ''}`} onClick={() => setSheet({ kind: 'vehicles' })}>
-            <Icon name="vehicles/coupe" size={13} /> Vehicles
-          </button>
-          <button className={`btn sm${sheet?.kind === 'recruits' ? ' on' : ''}`} onClick={() => setSheet({ kind: 'recruits' })}>
-            <Icon name="orders/recruit" size={13} /> Recruitment · {gang.recruitIds.length}
-          </button>
         </div>
       </section>
+  );
+
+  return (
+    <div className={`lieutenant-planning${dropOver ? ' drop-over' : ''}`} {...dropProps}>
+      {/* ------------------------------------------------ team details panel */}
+      {lt && (
+        <section className="team-panel" aria-label="Selected lieutenant">
+          <input aria-label="Crew name" className="team-name" value={team.name} onChange={(e) => rename(e.target.value)} title="Click to rename the team" spellCheck={false} />
+          <div className="team-head">
+            <div className="avatar">
+              <Portrait person={lt} gang={gang} size={64} />
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div className="row" style={{ gap: 12, alignItems: 'center' }}>
+                <h3 className={lt.pay < lt.payDemand ? 'unhappy' : ''}>{lt.name}</h3>
+                <Dial pct={timePct} size={36} />
+              </div>
+              <div className="counters">
+                <span className="crew-count" title={`The lieutenant and ${members.length} ${members.length === 1 ? 'hood' : 'hoods'}`}>
+                  <Icon name="groups/personnel" size={24} />
+                  <b>{members.length + 1}</b> crew
+                </span>
+                <span title="Weapons in the team's possession">
+                  <Icon name="skills/firearms" size={24} />
+                  <b>{guns}</b> {guns === 1 ? 'weapon' : 'weapons'}
+                </span>
+                <span title="Vehicles at the team's disposal">
+                  <Icon name="vehicles/coupe" size={24} />
+                  <b>{cars}</b> {cars === 1 ? 'vehicle' : 'vehicles'}
+                </span>
+              </div>
+              <div className="row" style={{ gap: 6, marginTop: 8 }}>
+                <span className={`tag ${lt.loyalty > 60 ? 'good' : lt.loyalty > 30 ? 'warn' : 'bad'}`}>Loyalty {Math.round(lt.loyalty)}</span>
+                <span className="tag">Wanted {Math.round(lt.wanted)}</span>
+                {lt.status !== 'active' && (
+                  <span className="tag bad">
+                    <Icon name={`status/${lt.status}`} size={12} /> {ABSENT[lt.status] ?? lt.status}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className={`pay-lines${lt.pay < lt.payDemand ? ' unhappy' : ''}`}>
+              <Kicker>Wants {money(lt.payDemand)}</Kicker>
+              <b>{money(lt.pay)}</b>
+              <Kicker>a week</Kicker>
+            </div>
+          </div>
+
+          {payOpen && <PayRoll person={lt} onClose={() => setPayOpen(false)} />}
+
+          <div className="team-buttons">
+            <button className="btn" onClick={() => setConfirm({ text: `Sack ${lt.name}? The team goes back to the pool, and he goes back on the street with a grudge.`, go: () => notify(act((s) => sackPerson(s.world, gang.id, lt.id))!) })}>
+              Sack
+            </button>
+            <button className="btn danger" disabled={!!outOfReach(lt)} title={outOfReach(lt) ? `${lt.name} is ${outOfReach(lt)}: nobody of yours can get at him there` : undefined}
+              onClick={() => setConfirm({ text: `Have ${lt.name} killed? The police will not look into it, but your other lieutenants will want more money.`, go: () => notify(act((s) => killMember(s.world, gang.id, lt.id))!) })}>
+              Kill
+            </button>
+            <button className="btn" title="Send the lieutenant and the team back to the pool" onClick={() => setConfirm({ text: `Demote ${lt.name}? His crew goes back to the pool, its orders are cancelled, and its weapons and cars go back to the cache.`, go: () => notify(act((s) => demote(s.world, gang.id, team.id))!) })}>
+              Demote
+            </button>
+            <button aria-pressed={showSkills} className={`btn${showSkills ? ' on' : ''}`} onClick={() => setShowSkills(!showSkills)} title="Swap the paper between the team and the lieutenant's skills">
+              {showSkills ? 'Team' : 'Skills'}
+            </button>
+            <button aria-expanded={payOpen} className={`btn${payOpen ? ' on' : ''}`} onClick={() => setPayOpen(!payOpen)}>
+              Pay
+            </button>
+            <button
+              className={`btn${pickMode?.kind === 'lieutenantArea' ? ' on' : ''}`}
+              onClick={() => {
+                const on = pickMode?.kind === 'lieutenantArea';
+                useGame.getState().selectTeam(team.id);
+                useGame.getState().toggleOverlay('lieutenant');
+                setCollapsed(!on);
+              }}
+            >
+              <Icon name="overlays/lieutenant" size={14} /> {pickMode?.kind === 'lieutenantArea' ? 'Done' : `Territory · ${team.allocatedBlockIds.length}`}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {/* ------------------------------------------------ reports / orders panel */}
+      {ordersPanel}
+
+      {/* ------------------------------------------------ the chosen group's orders, in a box of their own */}
+      {mode === 'orders' && orderGroup && (
+        <section className="list-box order-choices" aria-label={`${ORDER_GROUPS.find((g) => g.id === orderGroup)?.name} orders`}>
+          <div className="lb-head">
+            <b><Icon name={`groups/${orderGroup}`} size={18} /> {ORDER_GROUPS.find((g) => g.id === orderGroup)?.name}</b>
+            <button className="btn sm" onClick={() => setOrderGroup(null)} title="Close this list">×</button>
+          </div>
+          <div className="lb-body">
+            {/* The orders as cards like the group buttons above them. */}
+            <div className="planning-groups">
+              {Object.values(ORDERS).filter((o) => o.group === orderGroup).map((o) => (
+                <button key={o.type} className="group-btn order-card" onClick={() => beginOrder(o.type as OrderType, team.id)}>
+                  <span className="gb-name">
+                    <Icon name={`orders/${o.type}`} size={20} /> {o.name}
+                  </span>
+                  <span className="gb-description">{o.desc}</span>
+                  <span className="gb-meta">
+                    {orderCost(o)}{orderSkillText(o) && ` · Skill: ${orderSkillText(o)}`}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ------------------------------------------------ the crew, always open below the orders */}
+      {lt && (
+        <section className="team-roster" aria-label="Crew">
+          <div className="team-roster-head">{showSkills ? 'Lieutenant skills' : `Crew · ${members.length+1} people · ${members.length} hood${members.length===1?'':'s'}`}{members.some(m => m.status !== 'active') && ' · members absent'}</div>
+          <div className={`paper-strip${showSkills ? ' skills-strip' : ''}`} tabIndex={0} role="region" aria-label={showSkills ? "Lieutenant skills" : "Team members"}>
+            {showSkills ? (
+              <>
+                <Kicker style={{ marginBottom: 6 }}>{lt.name}'s skills</Kicker>
+                <SkillList skills={lt.skills} columns={2} />
+              </>
+            ) : (
+              <>
+                <Kicker style={{ marginBottom: 4 }}>
+                  {team.name} · {members.length} hood{members.length === 1 ? '' : 's'}
+                </Kicker>
+                {members.length === 0 ? (
+                  <Empty>Nobody yet. Drag hoods here from the pool.</Empty>
+                ) : (
+                  members.map((m) => {
+                    const absent = ABSENT[m.status];
+                    const job = orders.find((o) => o.opts.preferredHoodId === m.id || o.assignedIds.includes(m.id));
+                    return (
+                      <button
+                        key={m.id}
+                        className={`row-line${m.pay < m.payDemand ? ' unhappy' : ''}`}
+                        onClick={() => setSheet(sheet?.kind === 'person' && sheet.id === m.id ? null : { kind: 'person', id: m.id })}
+                        {...resourceDragProps({ kind: 'hood', id: m.id })}
+                        title="Click for his details; drag onto another lieutenant or the pool to move him"
+                      >
+                        <span className="nm">{m.name}</span>
+                        <span className="st">
+                          {absent ? (
+                            <>
+                              <Icon name={`status/${m.status}`} size={13} /> {absent}
+                            </>
+                          ) : job ? (
+                            ORDERS[job.type].name
+                          ) : (
+                            money(m.pay)
+                          )}
+                          {absent && (m.status === 'kidnapped' ? ' · tied to a chair' : m.status === 'arrested' || m.status === 'onTrial' ? ' · behind bars' : '')}
+                        </span>
+                      </button>
+                    );
+                  })
+                )}
+              </>
+            )}
+          </div>
+        </section>
+      )}
 
       <Advisor compact />
 
@@ -446,14 +473,10 @@ export function LieutenantStrip() {
   const selected = (selectedTeamId != null ? w.teams[selectedTeamId] : undefined) ?? teams[0];
 
   const slots = [];
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < maxTeams(gang); i++) {
     const t = teams[i];
     if (!t) {
-      slots.push(
-        <button key={`e${i}`} className="lt-tab empty" title="A free tab — promote a hood to fill it" onClick={() => setSheet({ kind: 'hoods' })}>
-          {i + 1}
-        </button>,
-      );
+      slots.push(<EmptyTab key={`e${i}`} index={i} onOpen={() => setSheet({ kind: 'hoods' })} />);
       continue;
     }
     slots.push(<LieutenantTab key={t.id} team={t} index={i} selected={selected?.id === t.id} onSelect={() => selectTeam(t.id)} />);
@@ -461,21 +484,80 @@ export function LieutenantStrip() {
   return <div className="lt-strip">{slots}</div>;
 }
 
-/** One lieutenant's tab; hoods, weapons and vehicles dropped on it join that crew. */
+/** Dragging one lieutenant's tab onto another's reorders the strip. */
+const TAB_MIME = 'application/x-og-lieutenant-tab';
+
+/** Move a crew to another place in the gang's tab order. */
+function moveTeamTab(teamId: ID, toIndex: number) {
+  act((s) => {
+    const ids = s.playerGang.teamIds;
+    const from = ids.indexOf(teamId);
+    if (from < 0 || from === toIndex) return;
+    ids.splice(from, 1);
+    ids.splice(Math.min(toIndex, ids.length), 0, teamId);
+  });
+}
+
+/** A free tab. A lieutenant's tab dropped on it moves to the end of the strip,
+ * since the tabs fill from the top. */
+function EmptyTab({ index, onOpen }: { index: number; onOpen: () => void }) {
+  const [over, setOver] = useState(false);
+  const isTab = (e: DragEvent) => e.dataTransfer.types.includes(TAB_MIME);
+  return (
+    <button className={`lt-tab empty${over ? ' drop-over' : ''}`} title="A free tab — promote a hood to fill it" onClick={onOpen}
+      onDragOver={(e) => {
+        if (!isTab(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (!over) setOver(true);
+      }}
+      onDragLeave={() => setOver(false)}
+      onDrop={(e) => {
+        if (!isTab(e)) return;
+        e.preventDefault();
+        setOver(false);
+        const id = Number(e.dataTransfer.getData(TAB_MIME));
+        if (Number.isFinite(id)) moveTeamTab(id, Number.MAX_SAFE_INTEGER);
+      }}>
+      {index + 1}
+    </button>
+  );
+}
+
+/** One lieutenant's tab; hoods, weapons and vehicles dropped on it join that crew,
+ * and another lieutenant's tab dropped on it takes its place in the order. */
 function LieutenantTab({ team: t, index, selected, onSelect }: { team: Team; index: number; selected: boolean; onSelect: () => void }) {
   const sim = useGame((s) => s.sim)!;
   const [dropProps, dropOver] = useResourceDrop({ kind: 'team', teamId: t.id });
+  const [tabOver, setTabOver] = useState(false);
   const w = sim.world, gang = sim.playerGang;
   const lt = w.people[t.lieutenantId];
   const pct = Math.round((t.timeUsed / MINUTES_PER_WEEK) * 100);
+  const resource = dropProps as { onDragOver: (e: DragEvent) => void; onDragLeave: (e: DragEvent) => void; onDrop: (e: DragEvent) => void };
+  const isTab = (e: DragEvent) => e.dataTransfer.types.includes(TAB_MIME);
   return (
     <button
-      aria-pressed={selected} className={`lt-tab${selected ? ' on' : ''}${lt && lt.status !== 'active' ? ' absent' : ''}${dropOver ? ' drop-over' : ''}`}
-      title={`${lt?.name ?? 'Vacant'} — ${t.name}${pct ? ` · ${pct}% of the week allocated` : ''}`}
+      aria-pressed={selected} className={`lt-tab${selected ? ' on' : ''}${lt && lt.status !== 'active' ? ' absent' : ''}${dropOver || tabOver ? ' drop-over' : ''}`}
+      title={`${lt?.name ?? 'Vacant'} — ${t.name}${pct ? ` · ${pct}% of the week allocated` : ''} · drag to reorder`}
       onClick={onSelect}
-      {...dropProps}
+      draggable
+      onDragStart={(e) => { e.dataTransfer.setData(TAB_MIME, String(t.id)); e.dataTransfer.effectAllowed = 'move'; }}
+      onDragOver={(e) => {
+        if (!isTab(e)) return resource.onDragOver(e);
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        if (!tabOver) setTabOver(true);
+      }}
+      onDragLeave={(e) => { setTabOver(false); resource.onDragLeave(e); }}
+      onDrop={(e) => {
+        if (!isTab(e)) return resource.onDrop(e);
+        e.preventDefault();
+        setTabOver(false);
+        const id = Number(e.dataTransfer.getData(TAB_MIME));
+        if (Number.isFinite(id) && id !== t.id) moveTeamTab(id, index);
+      }}
     >
-      {lt && <Portrait person={lt} gang={gang} size={58} />}
+      {lt && <Portrait person={lt} gang={gang} size={70} />}
       <span className="num">{index + 1}</span>
       {pct > 0 && <i className="mini-dial" style={{ ['--pct' as string]: pct }} />}
     </button>

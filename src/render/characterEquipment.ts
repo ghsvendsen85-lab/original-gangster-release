@@ -289,7 +289,7 @@ export class CharacterEquipment {
       arm('Right',new THREE.Vector3(-.17,shoulder.y-.09,.20+.48*extend));
       arm('Left',new THREE.Vector3(.18,shoulder.y-.15,.23));
     }else if(action.kind==='shoot'&&this.appearance?.weapon){
-      const weapon=this.appearance.weapon,long=['rifle','shotgun','tommy'].includes(weapon);
+      const weapon=this.appearance.weapon,long=longGun(weapon);
       const recoil=Math.max(0,1-Math.abs(action.time-.27)/.12)*.045;
       const target=new THREE.Vector3(long?-.15:-.19,shoulder.y-(long?.13:.07),long?.32:.48);
       target.z-=recoil;if(!authoredCombat)arm('Right',target);

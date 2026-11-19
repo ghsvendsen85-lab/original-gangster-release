@@ -15,7 +15,7 @@ function fixture() {
   const w = sim.world, g = sim.playerGang, t = w.teams[g.teamIds[0]];
   for (const team of Object.values(w.teams)) { team.orderIds = []; team.timeUsed = 0; }
   w.orders = {};
-  t.vehicles = { coupe: 0, truck: 0, speedster: 0 };
+  t.vehicles = { coupe: 0, truck: 0, speedster: 0, motorcycle: 0 };
   const lt = w.people[t.lieutenantId], hood = w.people[t.memberIds[0]];
   lt.skills.intimidation = 5; hood.skills.intimidation = 1;
   const office = Object.values(w.buildings).find(b => b.isHQ && b.ownerGangId === g.id)!;

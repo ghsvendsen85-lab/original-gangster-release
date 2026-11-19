@@ -2473,7 +2473,7 @@ input[type='range']::-moz-range-thumb {
   position: absolute;
   left: 22px;
   top: 80px;
-  width: 60px;
+  width: 72px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -2481,8 +2481,8 @@ input[type='range']::-moz-range-thumb {
 }
 .lt-tab {
   position: relative;
-  width: 60px;
-  height: 60px;
+  width: 72px;
+  height: 72px;
   padding: 0;
   border: 1px solid rgba(232, 199, 120, 0.35);
   background: #1e1009;
@@ -2496,7 +2496,7 @@ input[type='range']::-moz-range-thumb {
   background: rgba(0, 0, 0, 0.25);
   color: rgba(232, 199, 120, 0.4);
   font-family: var(--font-heading);
-  font-size: 13px;
+  font-size: 16px;
 }
 .lt-tab.on {
   border-color: var(--brass-hi);
@@ -2508,7 +2508,7 @@ input[type='range']::-moz-range-thumb {
   top: 1px;
   font-family: var(--font-heading);
   font-weight: 600;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--gold-text);
   text-shadow: 0 1px 0 #000;
 }
@@ -2517,11 +2517,56 @@ input[type='range']::-moz-range-thumb {
   position: absolute;
   right: 3px;
   bottom: 3px;
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   border: 1px solid var(--brass-line);
   background: conic-gradient(#c9412e calc(var(--pct) * 1%), var(--cream) 0);
+}
+.stock-counts {
+  display: flex;
+  gap: 8px;
+  margin: 2px 0 6px;
+}
+.stock-counts .stock {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--brass-line);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.06);
+  color: inherit;
+  font: inherit;
+  cursor: var(--cur-point, pointer);
+}
+.stock-counts {
+  flex-wrap: wrap;
+}
+.stock-counts .stock.buy {
+  margin-left: auto;
+}
+.stock-counts .stock.buy b {
+  font-size: 16px;
+}
+.stock-counts .stock:hover {
+  background: rgba(0, 0, 0, 0.14);
+  border-color: var(--brass-hi);
+}
+.stock-counts .stock:active {
+  transform: translateY(1px);
+}
+.stock-counts .stock .label {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.75;
+}
+.stock-counts .stock b {
+  font-family: var(--font-heading);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
 }
 .lt-tab.absent .portrait {
   filter: grayscale(1) contrast(0.8);
@@ -3558,8 +3603,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: 77px minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   gap: 8px;
   padding: 12px;
 }
@@ -3577,27 +3622,33 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .organizer-frame .planning-journal .page {
   position: relative;
   inset: auto;
-  grid-row: 2;
+  grid-row: 3;
   grid-column: 1 / -1;
   min-width: 0;
   min-height: 0;
 }
-.organizer-frame .planning-journal.with-strip .page { grid-column: 2; }
+/* Order cards have no gang summary above them: the page takes its row too. */
+.organizer-frame .planning-journal:not(:has(> .gang-summary)) .page { grid-row: 2 / 4; }
+.organizer-frame .planning-journal.with-strip .page,
+.organizer-frame .planning-journal.with-strip > .gang-summary { grid-column: 2; }
+.organizer-frame .planning-journal > .gang-summary {
+  grid-row: 2;
+  grid-column: 1 / -1;
+  min-width: 0;
+}
 .organizer-frame .planning-journal .lt-strip {
   position: relative;
   inset: auto;
-  grid-row: 2;
+  grid-row: 2 / 4;
   grid-column: 1;
   align-self: start;
   max-height: 100%;
   padding: 3px 2px;
   overflow-y: auto;
-  width: 64px;
+  width: 77px;
 }
-.planning-journal .gang-summary { flex-shrink: 0; border-bottom: 1px solid var(--rule); padding: 7px 12px; font-size: 12px; }
-.planning-journal .gang-summary summary { cursor: pointer; }
-.planning-journal .gang-summary summary > span + span { margin-left: 18px; color: var(--ink-2); }
-.planning-journal .gang-summary-body { display: flex; flex-wrap: wrap; gap: 6px 14px; padding-top: 8px; }
+.planning-journal .gang-summary { padding: 10px 14px; font-size: 24px; }
+.planning-journal .gang-summary-body { font-size: 18px; display: flex; flex-wrap: wrap; gap: 6px 14px; padding-top: 4px; }
 .planning-journal .page-body { padding: 10px 12px 0; }
 .planning-journal .page-foot { margin-top: 6px; padding: 8px 12px; gap: 7px 12px; }
 .planning-journal .page-foot .progress { flex: 1 1 160px; flex-wrap: wrap; gap: 4px 8px; font-size: 12px; }
@@ -3628,16 +3679,20 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .lieutenant-planning .team-head .row { gap: 6px !important; }
 .lieutenant-planning .counters { gap: 4px 10px; margin-top: 3px; font-size: 12px; }
 .lieutenant-planning .counters b { font-size: 16px; }
+.lieutenant-planning .counters > span { font-size: 19px; display: inline-flex; align-items: center; gap: 5px; }
+.lieutenant-planning .counters > span b { font-size: 28px; }
 .lieutenant-planning .pay-lines { min-width: 60px; }
 .lieutenant-planning .pay-lines b { font-size: 20px; }
 .lieutenant-planning .team-buttons { gap: 4px; margin-top: 8px; }
 .lieutenant-planning .team-buttons .btn { padding: 4px 8px; font-size: 12px; }
 .team-roster { margin-top: 8px; font-size: 12px; }
-.team-roster summary { cursor: pointer; color: var(--ink-2); }
-.lieutenant-planning .paper-strip { max-height: 112px; overflow-y: auto; margin-top: 8px; padding: 6px 8px; transform: none; }
+.team-roster-head { color: var(--ink-2); }
+.lieutenant-planning .paper-strip { margin-top: 8px; padding: 6px 8px; transform: none; }
 .lieutenant-planning .paper-strip.skills-strip { max-height: none; }
 .lieutenant-planning .paper-strip .row-line { padding: 3px 2px; font-size: 13px; }
 .lieutenant-planning .planning-orders { min-height: 0; margin-top: 8px; }
+.lieutenant-planning .order-choices { margin-top: 8px; }
+.lieutenant-planning .order-choices .lb-head { display: flex; justify-content: space-between; align-items: center; }
 .planning-orders .lb-head { flex-wrap: wrap; padding: 4px 8px; }
 .planning-orders .sub-tabs button { font-size: 14px; }
 .planning-time { font-size: 11px; color: var(--ink-2); }
@@ -3648,6 +3703,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .planning-groups .group-btn { margin: 0; padding: 7px 9px; display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
 .planning-groups .group-btn .gb-name { font: 600 16px var(--font-heading); color: var(--ink); text-align: left; }
 .planning-groups .group-btn .gb-description { font-size: 11px; text-align: left; line-height: 1.3; }
+.planning-groups .group-btn .gb-meta { font-size: 11px; text-align: left; color: var(--ink-2); font-style: italic; }
 .orders-empty { margin: 7px 0 0; font-size: 12px; color: var(--ink-2); }
 .queued-orders { margin-top: 8px; max-height: 140px; overflow-y: auto; }
 .queued-orders .report-item { align-items: flex-start; gap: 6px; }
@@ -3666,6 +3722,69 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   max-height: none;
   margin-bottom: 84px;
 }
+/* The right-hand window: a row of tabs over the city plan or a resource sheet.
+   On the map tab nothing fills it, so the plan canvas behind takes the clicks. */
+.organizer-frame > .resource-window {
+  grid-column: 2;
+  grid-row: 2;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  margin-bottom: 84px;
+  pointer-events: none;
+}
+.resource-window > * { pointer-events: auto; }
+.resource-window > .right-sheet {
+  position: relative;
+  inset: auto;
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  min-height: 0;
+  max-height: none;
+}
+.resource-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 4px;
+  padding: 0 10px;
+}
+.resource-tabs .jtab {
+  height: 36px;
+  border: 0;
+  border-radius: 7px 7px 0 0;
+  background: #4a1a14 url('/art/ui/leather-oxblood.jpg') center / 260px;
+  color: #e8c778;
+  box-shadow: inset 0 1px 0 rgba(255, 210, 150, 0.25), inset 0 0 0 1px rgba(0, 0, 0, 0.5), 0 -2px 8px rgba(0, 0, 0, 0.45);
+  filter: brightness(0.82);
+  transform: translateY(3px);
+  transition: filter 0.15s, transform 0.15s;
+}
+.resource-tabs .jtab:hover { filter: brightness(1); transform: translateY(1px); }
+.resource-tabs .jtab .label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+.resource-tabs .jtab .label .icon { filter: sepia(1) saturate(2.5) brightness(1.4); }
+.resource-tabs .jtab.on {
+  height: 40px;
+  padding: 0 14px;
+  background: #efe5cc url('/art/ui/page-blank.jpg') center top / 600px;
+  color: #2b1d10;
+  filter: none;
+  transform: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 -3px 10px rgba(0, 0, 0, 0.45);
+}
+.resource-tabs .jtab.on .label { color: #2b1d10; text-shadow: none; }
+.resource-tabs .jtab.on .label .icon { filter: none; }
 @media (max-width: 1100px) {
   .organizer-frame .journal-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
   .organizer-frame .journal-tabs .jtab { min-width: 0; }
@@ -3675,9 +3794,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 @media (max-width: 900px) {
   .organizer-frame { inset: 8px; grid-template-columns: minmax(0, 1fr); gap: 8px; }
   .organizer-frame .planning-journal { padding: 8px; }
-  .organizer-frame .planning-journal.with-strip .page { grid-column: 1 / -1; }
+  .organizer-frame .planning-journal.with-strip .page,
+  .organizer-frame .planning-journal.with-strip > .gang-summary { grid-column: 1 / -1; }
   .organizer-frame .planning-journal .lt-strip { display: none; }
   .organizer-frame > .right-sheet { grid-column: 1; margin-bottom: 0; }
+  .organizer-frame > .resource-window { grid-column: 1; margin-bottom: 0; }
 }
 @media (max-width: 480px) {
   .organizer-frame .journal-tabs { grid-template-columns: repeat(auto-fit, minmax(min(100%, 6em), 1fr)); }
@@ -3774,6 +3895,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .money-roll.rising { color: #3d8a4a; }
 
 /* Resources drag and drop: a crew or the pool lights up while a resource hovers over it. */
+/* The pool's drop zone fills the whole Hoods panel, not just its list. */
+.right-sheet .rs-body:has(> .resource-drop) { display: flex; flex-direction: column; }
+.right-sheet .rs-body > .resource-drop { flex: 1 0 auto; }
 .drop-over { outline: 2px dashed var(--brass); outline-offset: 2px; background-color: color-mix(in srgb, var(--brass-hi) 18%, transparent); }
 [draggable="true"] { cursor: grab; }
 
@@ -4022,6 +4146,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   box-shadow: 0 0 0 2px var(--brass-hi), 0 0 14px rgba(255, 196, 110, 0.4), 0 3px 6px rgba(0, 0, 0, 0.6);
 }
 .chip:active { transform: translateY(1px); }
+/* Job card options read as live buttons when off too; the gold ring marks the ones switched on. */
+.opt-row .chip { filter: none; }
+.opt-row .chip:hover { filter: brightness(1.05); }
 .chip:focus-visible { outline: 2px solid var(--brass-hi); outline-offset: 2px; }
 
 /* A brass rail with a bakelite knob, in place of a web slider. */
@@ -4299,7 +4426,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 
 /* ---- The page: ledger paper ---- */
-.organizer-frame .planning-journal .page {
+.organizer-frame .planning-journal .page,
+.organizer-frame .planning-journal > .gang-summary {
   background:
     radial-gradient(ellipse 80% 75% at 50% 45%, transparent 55%, rgba(120, 78, 28, 0.22) 100%),
     #efe5cc url('/art/ui/page-blank.jpg') center / cover;

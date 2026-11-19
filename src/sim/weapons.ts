@@ -4,7 +4,7 @@ import { peopleList } from './entityLists';
 
 export type Firearm = Exclude<WeaponId, 'explosives'>;
 export type Loadout = ReadonlyMap<ID, Firearm>;
-const BEST_FIRST: Firearm[] = ['twinPistols', 'tommy', 'rifle', 'shotgun', 'pistol'];
+const BEST_FIRST: Firearm[] = ['twinPistols', 'bar', 'tommy', 'rifle', 'shotgun', 'pistol'];
 export const UNARMED = { name: 'Close combat', range: 2, damage: 10, accuracy: 0.65 };
 
 /** Issued equipment is separate from whether it is currently drawn. */

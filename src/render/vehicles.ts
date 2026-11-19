@@ -7,7 +7,12 @@ export const VEHICLE_PROFILE: Record<VehicleId, { length: number; width: number;
   coupe: { length: 4.64, width: 1.86, height: 1.92, nose: 2.15, lampY: 0.91 },
   truck: { length: 5.54, width: 1.98, height: 2.43, nose: 2.61, lampY: 1.06 },
   speedster: { length: 4.54, width: 1.84, height: 1.42, nose: 2.10, lampY: 0.84 },
+  // The height includes the rider, who is drawn on the saddle.
+  motorcycle: { length: 2.30, width: 0.90, height: 1.70, nose: 0.98, lampY: 0.90 },
 };
+
+/** Where the motorcycle's rider sits: behind the middle, and lower than in a car. */
+export const MOTORCYCLE_SEAT = { back: .30, drop: .14 };
 
 interface Part { geometry: THREE.BufferGeometry; color: number; paint?: boolean }
 const BLACK = 0x1b1b1d, GLASS = 0x57717b, CHROME = 0xb3b0a6, LEATHER = 0x513729;
@@ -78,8 +83,58 @@ function merge(parts: Part[]): THREE.BufferGeometry {
   return geometry;
 }
 
+/** A box tilted about the lengthwise-vertical plane (rotation about Z), then placed. */
+function tiltedBox(w: number, h: number, d: number, x: number, y: number, z: number, tilt: number, color: number, paint = false): Part {
+  const geometry = new RoundedBoxGeometry(w, h, d, 1, Math.min(.012, w / 3, h / 3, d / 3));
+  geometry.rotateZ(tilt);
+  geometry.translate(x, y, z);
+  return { geometry, color, paint };
+}
+
+/** A 1920s motorcycle: spoked-look wheels with mudguards, a painted tank, saddle,
+ * sprung fork, handlebars and a single headlamp. Forward is +X, ground at zero. */
+function motorcycleGeometry(): THREE.BufferGeometry {
+  const parts: Part[] = [];
+  const r = .33, axles = [-.74, .74];
+  for (const x of axles) {
+    parts.push(cylinder(r, .10, x, r, 0, BLACK, 'z'));
+    parts.push(cylinder(r * .72, .105, x, r, 0, 0x55595a, 'z'));
+    parts.push(cylinder(r * .2, .14, x, r, 0, CHROME, 'z'));
+    // Mudguard over the top half of the wheel, in the owner's colours.
+    const guard = new THREE.TorusGeometry(r + .05, .045, 5, 18, Math.PI * .8);
+    guard.rotateZ(Math.PI * .1);
+    guard.translate(x, r, 0);
+    parts.push({ geometry: guard, color: 0xf4f1e9, paint: true });
+  }
+  // Frame: a backbone from the steering head to the rear axle, and a down tube to the engine.
+  parts.push(tiltedBox(1.18, .06, .07, -.02, .70, 0, -.10, BLACK));
+  parts.push(tiltedBox(.62, .06, .07, .38, .52, 0, .95, BLACK));
+  parts.push(tiltedBox(.60, .05, .05, -.44, .50, 0, .55, BLACK));
+  // Engine and gearbox between the wheels, the exhaust down the right side.
+  parts.push(box(.40, .30, .24, 0, .44, 0, 0x4a4d50, false, .04));
+  for (let i = 0; i < 4; i++) parts.push(box(.42, .018, .26, 0, .34 + i * .06, 0, 0x3b3e40, false, .004));
+  parts.push(cylinder(.032, .82, -.36, .30, .16, CHROME, 'x'));
+  parts.push(cylinder(.05, .22, -.82, .32, .16, CHROME, 'x'));
+  // Fuel tank (painted) and leather saddle with its springs.
+  parts.push(box(.58, .20, .27, .16, .82, 0, 0xf4f1e9, true, .08));
+  parts.push(box(.40, .07, .25, -.30, .80, 0, LEATHER, false, .03));
+  for (const z of [-.07, .07]) parts.push(cylinder(.018, .10, -.42, .73, z, CHROME));
+  // Footboards either side.
+  for (const side of [-1, 1]) parts.push(box(.30, .025, .10, .02, .26, side * .19, BLACK, false, .006));
+  // Sprung front fork, handlebars and headlamp.
+  for (const side of [-1, 1]) parts.push(tiltedBox(.04, .66, .04, .66, .64, side * .075, .32, CHROME));
+  parts.push(cylinder(.016, .66, .52, 1.02, 0, CHROME, 'z'));
+  for (const side of [-1, 1]) parts.push(cylinder(.024, .11, .52, 1.02, side * .30, BLACK, 'z'));
+  parts.push(cylinder(.085, .12, .86, .90, 0, CHROME, 'x'));
+  parts.push(cylinder(.07, .02, .925, .90, 0, 0xe3d4a7, 'x'));
+  // A small tail lamp on the rear mudguard.
+  parts.push(box(.05, .05, .07, -1.10, .62, 0, 0x7a1f1a, false, .01));
+  return merge(parts);
+}
+
 /** Period coachwork: separate bonnet, cabin, glass, mudguards and running boards. Forward is +X. */
 export function vehicleGeometry(kind: VehicleId): THREE.BufferGeometry {
+  if (kind === 'motorcycle') return motorcycleGeometry();
   const truck = kind === 'truck', open = kind === 'speedster';
   const parts: Part[] = [];
   const axles: [number, number] = truck ? [-1.80, 1.81] : [-1.42, 1.47];
@@ -178,7 +233,7 @@ export function vehicleForPerson(world: WorldState, person: Person): VehicleId {
   const team = person.teamId != null ? world.teams[person.teamId] : undefined;
   if (!team) return 'coupe';
   const choices: VehicleId[] = [];
-  for (const kind of ['coupe', 'truck', 'speedster'] as const) {
+  for (const kind of ['coupe', 'truck', 'speedster', 'motorcycle'] as const) {
     // Legacy or isolated visual-review figures without a saved seat.
     if ((team.vehicles[kind] ?? 0) > 0) choices.push(kind);
   }

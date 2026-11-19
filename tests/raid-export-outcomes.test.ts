@@ -13,7 +13,7 @@ function fixture() {
   staffFirstCrew(sim);
   const w = sim.world, g = sim.playerGang, t = w.teams[g.teamIds[0]];
   w.orders = {}; for (const team of Object.values(w.teams)) { team.orderIds = []; team.timeUsed = 0; }
-  t.vehicles = { coupe: 0, truck: 1, speedster: 0 };
+  t.vehicles = { coupe: 0, truck: 1, speedster: 0, motorcycle: 0 };
   const warehouses = Object.values(w.buildings).filter(b => b.typeId === 'warehouse');
   for (const b of warehouses) b.ownerGangId = null;
   warehouses[0].ownerGangId = g.id; warehouses[0].stock = { liquor: 0, stolen: 0, counterfeit: 0 };

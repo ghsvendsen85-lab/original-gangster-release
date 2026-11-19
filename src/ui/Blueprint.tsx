@@ -76,9 +76,12 @@ function mapArea(canvas: HTMLCanvasElement, journalOpen: boolean): MapArea {
   const journal = journalOpen ? document.querySelector('.journal')?.getBoundingClientRect() : null;
   const x = journal && journal.width < width * .82 ? journal.right - origin.left + 18 : 24;
   const tabs = journalOpen ? document.querySelector('.journal-tabs')?.getBoundingClientRect() : null;
+  // The map is the first tab of the right-hand window: its sheet hangs straight from the tab row.
+  const windowTabs = journalOpen ? document.querySelector('.resource-tabs')?.getBoundingClientRect() : null;
+  const besideJournal = !!journal && !!windowTabs && windowTabs.height > 0 && windowTabs.left >= journal.right - 1;
   const targetBar = !journalOpen ? document.querySelector('.order-target-bar, .plan-map-bar')?.getBoundingClientRect() : null;
   const top = tabs ?? targetBar;
-  const y = top ? top.bottom - origin.top + 14 : 24;
+  const y = besideJournal ? windowTabs!.bottom - origin.top + 8 : top ? top.bottom - origin.top + 14 : 24;
   const controls = document.querySelector('.map-buttons')?.getBoundingClientRect();
   const bottom = controls && controls.height > 0 ? controls.top - origin.top - 12 : height - 18;
   return { x, y, w: Math.max(100, width - x - 24), h: Math.max(160, bottom - y) };

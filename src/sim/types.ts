@@ -565,8 +565,8 @@ export interface Team {
   timeUsed: number;
 }
 
-export type WeaponId = 'pistol' | 'shotgun' | 'rifle' | 'tommy' | 'twinPistols' | 'explosives';
-export type VehicleId = 'coupe' | 'truck' | 'speedster';
+export type WeaponId = 'pistol' | 'shotgun' | 'rifle' | 'tommy' | 'twinPistols' | 'bar' | 'explosives';
+export type VehicleId = 'coupe' | 'truck' | 'speedster' | 'motorcycle';
 
 /** Lazily materialized from the team's inventory; one entry is one car. */
 export interface GoodsDelivery {

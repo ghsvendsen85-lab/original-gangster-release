@@ -18,6 +18,8 @@ import {
   ORDERS,
   VEHICLES,
   WEAPON_ORDER,
+  VEHICLE_ORDER,
+  maxTeams,
 } from './constants';
 import { BUILDING_BY_ID, coverQuality } from './data/buildings';
 import { addMessage, addNews, blockAtPos, recordCrime, reportBusinessMove, shiftLocalOpinion } from './events';
@@ -2038,7 +2040,7 @@ export function disbandTeam(w: WorldState, gang: Gang, teamId: ID, keepLieutenan
     }else for(const id of [...v.occupantIds]){const p=w.people[id];if(p)dismount(w,p);}
     delete w.vehicleFleet![key];
   }
-  for(const kind of ['coupe','truck','speedster'] as const)gang.vehicles[kind]=(gang.vehicles[kind]??0)+(team.vehicles[kind]??0);
+  for(const kind of VEHICLE_ORDER)gang.vehicles[kind]=(gang.vehicles[kind]??0)+(team.vehicles[kind]??0);
   for (const kind of WEAPON_ORDER) gang.weapons[kind] = (gang.weapons[kind] ?? 0) + (team.weapons[kind] ?? 0);
   for (const oid of team.orderIds) {
     const order = w.orders[oid];
@@ -2073,7 +2075,7 @@ export function disbandTeam(w: WorldState, gang: Gang, teamId: ID, keepLieutenan
 
 /** Promote a hood into a lieutenant, creating a new team. */
 export function promoteToLieutenant(w: WorldState, gang: Gang, hood: Person): Team | null {
-  if (gang.teamIds.length >= 8) return null;
+  if (gang.teamIds.length >= maxTeams(gang)) return null;
   if (hood.teamId != null) {
     const old = w.teams[hood.teamId];
     if (old) old.memberIds = old.memberIds.filter((id) => id !== hood.id);
@@ -2087,8 +2089,8 @@ export function promoteToLieutenant(w: WorldState, gang: Gang, hood: Person): Te
     lieutenantId: hood.id,
     name: `${hood.name.split(' ')[0]}'s Crew`,
     memberIds: [],
-    weapons: { pistol: 0, shotgun: 0, rifle: 0, tommy: 0, twinPistols: 0, explosives: 0 },
-    vehicles: { coupe: 0, truck: 0, speedster: 0 },
+    weapons: { pistol: 0, shotgun: 0, rifle: 0, tommy: 0, twinPistols: 0, bar: 0, explosives: 0 },
+    vehicles: { coupe: 0, truck: 0, speedster: 0, motorcycle: 0 },
     allocatedBlockIds: [],
     orderIds: [],
     timeUsed: 0,

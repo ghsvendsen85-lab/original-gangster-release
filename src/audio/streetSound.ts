@@ -7,7 +7,7 @@ import { playSample, sample, type SampleName } from './samples';
  * short procedural street reverb (brick fronts either side), so a pistol in an
  * alley rings rather than clicks. Nothing here touches the simulation.
  */
-export type ShotKind = 'pistol' | 'twinPistols' | 'shotgun' | 'rifle' | 'tommy' | 'police';
+export type ShotKind = 'pistol' | 'twinPistols' | 'shotgun' | 'rifle' | 'tommy' | 'bar' | 'police';
 
 interface Rig {
   ctx: AudioContext;
@@ -99,6 +99,17 @@ export const streetSound = {
   /** A shot `distance` metres from the listener, `pan` -1..1 across the screen. */
   shot(kind: ShotKind, gain: number, pan: number): void {
     const r = ready(); if (!r || gain < .01) return;
+    // The B.A.R. has no recording: a quick burst of three rifle reports.
+    if (kind === 'bar') {
+      const wet = .2 + (1 - gain) * .3;
+      if (recorded(r, 'shot-rifle', gain, pan, wet)) {
+        for (const i of [1, 2]) setTimeout(() => recorded(r, 'shot-rifle', gain * .85, pan, wet), i * 100);
+        return;
+      }
+      const t = r.ctx.currentTime + Math.random() * .02, v = voice(r, gain, pan, .45 + (1 - gain) * .4);
+      for (let i = 0; i < 3; i++) report(r, v, t + i * .1, 'rifle');
+      return;
+    }
     const name: SampleName = kind === 'tommy' ? 'shot-tommy' : kind === 'twinPistols' ? 'shot-twin' : kind === 'shotgun' ? 'shot-shotgun'
       : kind === 'rifle' ? 'shot-rifle' : 'shot-pistol';
     if (recorded(r, name, gain, pan, .2 + (1 - gain) * .3)) return;

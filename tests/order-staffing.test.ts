@@ -14,7 +14,7 @@ function fixture() {
   const w = sim.world, g = sim.playerGang, t = w.teams[g.teamIds[0]];
   w.orders = {};
   for (const team of Object.values(w.teams)) { team.orderIds = []; team.timeUsed = 0; }
-  t.vehicles = { coupe: 0, truck: 0, speedster: 0 };
+  t.vehicles = { coupe: 0, truck: 0, speedster: 0, motorcycle: 0 };
   const hq = Object.values(w.buildings).find(b => b.isHQ && b.ownerGangId === g.id)!;
   return { sim, w, g, t, hq };
 }

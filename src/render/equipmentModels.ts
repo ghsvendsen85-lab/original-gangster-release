@@ -74,6 +74,17 @@ function equipmentGeometry(kind: EquipmentModel): THREE.BufferGeometry {
     } else box(.034,.034,.36,0,.046,.25,walnut);
     loop(.028,.004,0,.008,.016,steel);
     box(.007,.016,.012,0,.093,.1+barrel-.018,steel);
+  } else if(kind==='bar') {
+    // Browning Automatic Rifle: long finned barrel, box magazine under the receiver, bipod-less.
+    stock(.32);
+    box(.042,.06,.30,0,.068,.08,steel);
+    tube(.014,.50,0,.082,.48,steel);
+    for(let i=0;i<5;i++) tube(.02,.01,0,.082,.27+i*.024,steel);
+    box(.036,.036,.30,0,.044,.32,walnut);
+    box(.034,.12,.07,0,-.02,.13,steel);
+    box(.034,.092,.046,0,-.015,-.018,walnut,-.18);
+    loop(.026,.004,0,.008,.016,steel);
+    box(.008,.02,.012,0,.1,.71,steel);
   } else if(kind==='explosives') {
     for(let x=-1;x<=1;x++) tube(.024,.23,x*.047,0,0,0x985945);
     for(const z of [-.066,.066]) box(.146,.052,.022,0,0,z,leather);

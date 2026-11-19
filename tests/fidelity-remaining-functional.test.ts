@@ -136,8 +136,8 @@ function depletedFixture(cash: number, keepSite = false, keepManager = false) {
     if (b.protection?.gangId === gang.id) b.protection = null;
   }
   gang.cash = cash;
-  const emptyWeapons = { pistol: 0, shotgun: 0, rifle: 0, tommy: 0, twinPistols: 0, explosives: 0 };
-  const emptyVehicles = { coupe: 0, truck: 0, speedster: 0 };
+  const emptyWeapons = { pistol: 0, shotgun: 0, rifle: 0, tommy: 0, twinPistols: 0, bar: 0, explosives: 0 };
+  const emptyVehicles = { coupe: 0, truck: 0, speedster: 0, motorcycle: 0 };
   gang.weapons = { ...emptyWeapons }; gang.vehicles = { ...emptyVehicles };
   gang.staffVehicles = { accountant: null, lawyer: null };
   for (const id of gang.teamIds) {

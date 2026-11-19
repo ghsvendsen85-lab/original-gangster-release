@@ -17,7 +17,7 @@ describe('deterministic visual choice among available team vehicle types', () =>
   });
 
   it('shows all three available types across a mixed roster in stable order', () => {
-    const { world, person } = fixture({ coupe: 8, truck: 1, speedster: 2 });
+    const { world, person } = fixture({ coupe: 8, truck: 1, speedster: 2, motorcycle: 0 });
     const expected = ['coupe', 'truck', 'speedster', 'coupe', 'truck', 'speedster'];
     const ids = [10, 11, 12, 13, 14, 15];
     expect(ids.map(id => vehicleForPerson(world, person(id)))).toEqual(expected);
@@ -26,12 +26,12 @@ describe('deterministic visual choice among available team vehicle types', () =>
   });
 
   it('does not show a type with no positive inventory', () => {
-    const { world, person } = fixture({ coupe: 0, truck: 3, speedster: -1 });
+    const { world, person } = fixture({ coupe: 0, truck: 3, speedster: -1, motorcycle: 0 });
     expect([10, 11, 12].map(id => vehicleForPerson(world, person(id)))).toEqual(['truck', 'truck', 'truck']);
   });
 
   it('deduplicates a lieutenant or member listed twice without shifting later crew slots', () => {
-    const { world, person } = fixture({ coupe: 1, truck: 1, speedster: 1 }, [10, 11, 11, 12]);
+    const { world, person } = fixture({ coupe: 1, truck: 1, speedster: 1, motorcycle: 0 }, [10, 11, 11, 12]);
     expect([10, 11, 12].map(id => vehicleForPerson(world, person(id)))).toEqual(['coupe', 'truck', 'speedster']);
   });
 
@@ -53,7 +53,7 @@ describe('deterministic visual choice among available team vehicle types', () =>
   });
 
   it('does not change the team, roster, inventory or person when queried', () => {
-    const { world, person } = fixture({ coupe: 2, truck: 1, speedster: 1 });
+    const { world, person } = fixture({ coupe: 2, truck: 1, speedster: 1, motorcycle: 0 });
     const driver = person(11);
     const before = JSON.stringify({ world, driver });
     for (let frame = 0; frame < 30; frame++) vehicleForPerson(world, driver);

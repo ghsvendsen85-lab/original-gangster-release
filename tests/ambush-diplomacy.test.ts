@@ -27,9 +27,9 @@ function fixture() {
     p.skills.intelligence = 5; p.skills.firearms = 5; p.hp = 100;
   }
   w.people[team.lieutenantId].status = 'onTrial'; // May still give planning orders, but cannot fight in this fixture.
-  team.weapons = { pistol: 1, shotgun: 0, rifle: 0, tommy: 0, twinPistols: 0, explosives: 0 };
-  otherTeam.weapons = { pistol: 0, shotgun: 0, rifle: 0, tommy: 0, twinPistols: 0, explosives: 0 };
-  team.vehicles = { coupe: 0, truck: 0, speedster: 0 };
+  team.weapons = { pistol: 1, shotgun: 0, rifle: 0, tommy: 0, twinPistols: 0, bar: 0, explosives: 0 };
+  otherTeam.weapons = { pistol: 0, shotgun: 0, rifle: 0, tommy: 0, twinPistols: 0, bar: 0, explosives: 0 };
+  team.vehicles = { coupe: 0, truck: 0, speedster: 0, motorcycle: 0 };
   target.pos.x += 10; target.hp = 1000;
   gang.offered[rival.id] = 'peace'; rival.offered[gang.id] = 'peace';
   return { sim, w, gang, rival, team, actor, target, block };
@@ -86,7 +86,7 @@ describe('diplomacy governs ordinary encounters; Ambush is a deliberate attack i
 
   it('an ambusher with a Tommy gets three shots into each attempt', () => {
     const s = fixture();
-    s.team.weapons = { pistol: 0, shotgun: 0, rifle: 0, tommy: 1, twinPistols: 0, explosives: 0 };
+    s.team.weapons = { pistol: 0, shotgun: 0, rifle: 0, tommy: 1, twinPistols: 0, bar: 0, explosives: 0 };
     s.target.pos.x = s.actor.pos.x + 2;
     ambush(s);
     const chance = vi.spyOn(s.sim.rng, 'chance').mockReturnValue(false);

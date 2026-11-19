@@ -25,7 +25,7 @@ describe('standing orders selected by individual properties', () => {
     const sim = new Sim({ ...defaultGameOptions(), seed: 404, citySize: 10 });
     const w = sim.world, g = sim.playerGang, t = w.teams[g.teamIds[0]];
     const site = allBuildings(w).find(b => b.ownerGangId === g.id && !b.isHQ && b.cls !== 'empty')!;
-    t.vehicles = { coupe: car ? 1 : 0, truck: 0, speedster: 0 };
+    t.vehicles = { coupe: car ? 1 : 0, truck: 0, speedster: 0, motorcycle: 0 };
     expect(issueOrder(w, g.id, { teamId: t.id, type: 'guardBusiness', buildingIds: [site.id] }).ok).toBe(true);
     sim.launchWeek();
     const order = w.orders[t.orderIds[0]], actor = w.people[order.assignedIds[0]];
@@ -41,7 +41,7 @@ describe('standing orders selected by individual properties', () => {
   it('holds the selected go-to point until cancellation', () => {
     const sim = new Sim({ ...defaultGameOptions(), seed: 404, citySize: 10 });
     const w = sim.world, g = sim.playerGang, t = w.teams[g.teamIds[0]];
-    t.vehicles = { coupe: 0, truck: 0, speedster: 0 };
+    t.vehicles = { coupe: 0, truck: 0, speedster: 0, motorcycle: 0 };
     const site = allBuildings(w).find(b => b.protection?.gangId === g.id)!;
     const pos = buildingDoor(w, site);
     expect(issueOrder(w, g.id, { teamId: t.id, type: 'goTo', pos }).ok).toBe(true);

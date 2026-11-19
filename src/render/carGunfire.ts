@@ -14,7 +14,7 @@ interface Shot { actorId: number; weapon: WeaponId; target: Vec2; time: number }
 
 /** When the muzzle flashes, for `t` seconds after the shot: a burst for the Tommy gun, one for the rest. */
 export function carGunFlash(weapon: WeaponId, t: number): number {
-  const shots = weapon === 'tommy' ? 5 : weapon === 'twinPistols' ? 2 : 1, every = weapon === 'tommy' ? .075 : .11;
+  const shots = weapon === 'tommy' ? 5 : weapon === 'bar' ? 3 : weapon === 'twinPistols' ? 2 : 1, every = weapon === 'tommy' ? .075 : weapon === 'bar' ? .1 : .11;
   for (let i = 0; i < shots; i++) {
     const d = t - i * every;
     if (d >= 0 && d < .05) return 1 - d / .05;

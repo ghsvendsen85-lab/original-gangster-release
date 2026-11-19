@@ -3468,6 +3468,12 @@
           "shape": {
             "type": "number"
           }
+        },
+        "bar": {
+          "optional": false,
+          "shape": {
+            "type": "number"
+          }
         }
       }
     },
@@ -3486,6 +3492,12 @@
           }
         },
         "speedster": {
+          "optional": false,
+          "shape": {
+            "type": "number"
+          }
+        },
+        "motorcycle": {
           "optional": false,
           "shape": {
             "type": "number"
@@ -3510,6 +3522,9 @@
               },
               {
                 "literal": "speedster"
+              },
+              {
+                "literal": "motorcycle"
               }
             ]
           }
@@ -3529,6 +3544,9 @@
               },
               {
                 "literal": "speedster"
+              },
+              {
+                "literal": "motorcycle"
               }
             ]
           }
@@ -5420,6 +5438,9 @@
               },
               {
                 "literal": "speedster"
+              },
+              {
+                "literal": "motorcycle"
               }
             ]
           }

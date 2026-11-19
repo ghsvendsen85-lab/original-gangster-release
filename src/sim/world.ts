@@ -376,7 +376,7 @@ export function starFactor(stars: number): number {
 }
 
 export function bestWeapon(team: Team): WeaponId | null {
-  const order: WeaponId[] = ['twinPistols', 'tommy', 'rifle', 'shotgun', 'pistol'];
+  const order: WeaponId[] = ['twinPistols', 'bar', 'tommy', 'rifle', 'shotgun', 'pistol'];
   for (const wid of order) if ((team.weapons[wid] ?? 0) > 0) return wid;
   return null;
 }

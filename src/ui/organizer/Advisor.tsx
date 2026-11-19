@@ -62,7 +62,7 @@ export function adviseOn(w: WorldState, gangId: number): Advice[] {
   if (spare > 0 && unarmed) {
     out.push({
       urgency: 'normal',
-      text: `${w.people[unarmed.lieutenantId]?.name ?? 'A lieutenant'}'s crew carries no guns, and there ${spare === 1 ? 'is one' : `are ${spare}`} in the cache. Open Weapons and send some across (→ Team) before they go out.`,
+      text: `${w.people[unarmed.lieutenantId]?.name ?? 'A lieutenant'}'s crew carries no guns, and there ${spare === 1 ? 'is one' : `are ${spare}`} in the cache. Open Weapons and send some across (click the Lieutenant count) before they go out.`,
     });
   }
   const inTrouble = Object.values(w.cases).filter(

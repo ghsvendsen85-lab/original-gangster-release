@@ -9,6 +9,8 @@ export const GENERATED_EQUIPMENT = {
   shotgun:{file:'shotgun',length:1.18,yaw:Math.PI/2,grip:[.16,-.035,0]},
   rifle:{file:'rifle',length:1.07,yaw:Math.PI/2,grip:[.16,-.035,0]},
   tommy:{file:'tommy',length:.86,yaw:Math.PI/2,grip:[.12,-.06,0]},
+  // No B.A.R. model of its own yet: the rifle, drawn to the B.A.R.'s 1.19 m.
+  bar:{file:'rifle',length:1.19,yaw:Math.PI/2,grip:[.16,-.035,0]},
   explosives:{file:'explosives',length:.26,yaw:0,grip:[0,0,0]},
   camera:{file:'camera',length:.19,yaw:0,grip:[0,0,0]},
 } as const;

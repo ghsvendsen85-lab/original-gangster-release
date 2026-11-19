@@ -94,11 +94,25 @@ function* checkBatches(value: unknown, shape: Shape, depth = 0, levels = 0): Gen
   return null;
 }
 
+/** Weapons and vehicles added after a save was made: none in stock. Saves list
+ * every kind, so an older one would otherwise fail the shape check. */
+const ADDED_WEAPONS = ['bar'] as const, ADDED_VEHICLES = ['motorcycle'] as const;
+function addNewEquipment(w: WorldState): void {
+  const stocks = [...Object.values(w.gangs ?? {}), ...Object.values(w.teams ?? {})];
+  for (const holder of stocks) {
+    if (!holder || typeof holder !== 'object') continue;
+    const weapons = holder.weapons as Record<string, number> | undefined, vehicles = holder.vehicles as Record<string, number> | undefined;
+    if (weapons && typeof weapons === 'object') for (const k of ADDED_WEAPONS) weapons[k] ??= 0;
+    if (vehicles && typeof vehicles === 'object') for (const k of ADDED_VEHICLES) vehicles[k] ??= 0;
+  }
+}
+
 function validationInput(value: unknown) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error('Save does not contain a world.');
   const w = value as WorldState;
   if (w.schemaVersion != null && w.schemaVersion !== 1 && w.schemaVersion !== SAVE_SCHEMA_VERSION) throw Error('This save needs a different version of the game.');
   const legacy = w.schemaVersion == null || w.schemaVersion === 1;
+  addNewEquipment(w);
   const candidate = { ...w, sequences: legacy ? w.sequences ?? { message: 1, crime: 1, court: 1 } : w.sequences };
   return { w, candidate };
 }

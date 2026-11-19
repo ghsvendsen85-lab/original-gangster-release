@@ -9,6 +9,7 @@ import { bossInsideOffice } from '../render/characterPresentation';
 import { create } from 'zustand';
 import { fitAreaToWeek, type ApiResult } from '../sim/api';
 import { weekCharge } from '../sim/execution';
+import { ORDERS } from '../sim/constants';
 import { Sim } from '../sim/sim';
 import { planGang } from '../sim/ai';
 import type { GameOptions, ID, MessageCategory, OrderOptions, OrderType, SpecialistJob, Vec2 } from '../sim/types';
@@ -661,7 +662,8 @@ export const useGame = create<GameState>((set, get) => ({
           repeat: false,
           isPublic: false,
           priority: false,
-          manpower: 1,
+          // Start with the whole crew (lieutenant included) on the job, up to the order's limit.
+          manpower: Math.max(1, Math.min(ORDERS[type].maxManpower, (sim?.world.teams[teamId]?.memberIds.length ?? 0) + 1)),
           wait: false,
           preferredHoodId: null,
           protectionLevel: 1,

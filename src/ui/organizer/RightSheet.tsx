@@ -185,6 +185,72 @@ export function RightSheet() {
   );
 }
 
+/** The tabs over the right-hand window: the city plan, or one of the gang's resources. */
+const RESOURCE_TABS = [
+  { id: 'map', label: 'City Map', icon: 'tabs/maps', key: '' },
+  { id: 'hoods', label: 'Hoods', icon: 'groups/personnel', key: 'H' },
+  { id: 'weapons', label: 'Weapons', icon: 'weapons/pistol', key: 'W' },
+  { id: 'vehicles', label: 'Vehicles', icon: 'vehicles/coupe', key: 'V' },
+  { id: 'recruits', label: 'Recruitment', icon: 'orders/recruit', key: '' },
+] as const;
+type ResourceTabId = (typeof RESOURCE_TABS)[number]['id'];
+
+/**
+ * The right-hand window of the planning desk: a row of tabs that switches
+ * between the city plan (drawn behind, showing through) and the resource sheets.
+ */
+export function ResourceWindow() {
+  const sim = useGame((s) => s.sim)!;
+  const sheet = useGame((s) => s.sheet);
+  const setSheet = useGame((s) => s.setSheet);
+  const setPlanningView = useGame((s) => s.setPlanningView);
+  useGame((s) => s.version);
+  const gang = sim.playerGang;
+  // Other sheets (orders, a person, the clipboard) open here too, with no tab of their own.
+  const active: ResourceTabId | null = !sheet ? 'map' : RESOURCE_TABS.some((t) => t.id === sheet.kind) ? (sheet.kind as ResourceTabId) : null;
+  const open = (id: ResourceTabId) => {
+    if (id === 'map') { setSheet(null); setPlanningView('plan'); }
+    else setSheet({ kind: id });
+  };
+  const count = (id: ResourceTabId) => id === 'hoods' ? ` · ${gang.poolIds.length}` : id === 'recruits' ? ` · ${gang.recruitIds.length}` : '';
+  return (
+    <div className="resource-window">
+      <div className="resource-tabs" role="tablist" aria-label="Map and resources">
+        {RESOURCE_TABS.map((t, i) => (
+          <button key={t.id} role="tab" aria-selected={active === t.id} tabIndex={active === t.id || (active == null && i === 0) ? 0 : -1}
+            className={`jtab${active === t.id ? ' on' : ''}`} title={t.key ? `${t.label} (${t.key})` : t.label}
+            onClick={() => open(t.id)}
+            onKeyDown={(e) => {
+              const next = e.key === 'ArrowRight' ? (i + 1) % RESOURCE_TABS.length : e.key === 'ArrowLeft' ? (i + RESOURCE_TABS.length - 1) % RESOURCE_TABS.length : -1;
+              if (next < 0) return;
+              e.preventDefault();
+              open(RESOURCE_TABS[next].id);
+              (e.currentTarget.parentElement?.children[next] as HTMLElement | undefined)?.focus();
+            }}>
+            <span className="label"><Icon name={t.icon} size={14} /> {t.label}{count(t.id)}</span>
+          </button>
+        ))}
+      </div>
+      <RightSheet />
+    </div>
+  );
+}
+
+/** Promote a hood, then open the Lieutenants page on his new crew's tab,
+ * keeping the Hoods tab open beside it to staff the crew. */
+function promoteAndShow(personId: ID): boolean {
+  const { notify, selectTeam, setTab, setSheet } = useGame.getState();
+  const result = act((s) => promote(s.world, s.playerGang.id, personId));
+  if (!result) return false;
+  notify(result);
+  if (!result.ok) return false;
+  const teamId = useGame.getState().sim?.world.people[personId]?.teamId;
+  // Changing page closes the right-hand sheet, so the Hoods tab is reopened after.
+  if (teamId != null) { selectTeam(teamId); setTab('lieutenants'); }
+  setSheet({ kind: 'hoods' });
+  return true;
+}
+
 // ---------------------------------------------------------------- sheets
 
 function OrderListSheet({ group, teamId }: { group: OrderDef['group']; teamId: ID | null }) {
@@ -262,7 +328,7 @@ function PoolSheet({ teamId }: { teamId?: ID }) {
             )}
             {/* Reachable even with no crews at all — otherwise losing your
                 last lieutenant would leave the game unwinnable. */}
-            <button className="btn sm" title="Make this hood a lieutenant with a team of his own" onClick={() => notify(act((s) => promote(s.world, gang.id, p.id))!)}>
+            <button className="btn sm" title="Make this hood a lieutenant with a team of his own" onClick={() => promoteAndShow(p.id)}>
               Promote
             </button>
           </div>
@@ -272,14 +338,43 @@ function PoolSheet({ teamId }: { teamId?: ID }) {
   );
 }
 
+/** How many are in the gang's cache and with the selected lieutenant, large enough to read at a glance.
+ * Clicking a count moves one over to that side. */
+function StockCounts({ cache, crew, cost, toCache, toCrew, buy }:
+  { cache: number; crew: number; cost: number; toCache: () => void; toCrew: () => void; buy: () => void }) {
+  return (
+    <div className="stock-counts">
+      <button type="button" className="stock" onClick={toCrew}
+        title={cache ? 'Click to move one from the cache to the lieutenant' : 'None in the cache to hand over'}>
+        <span className="label">Lieutenant</span><b>{crew}</b>
+      </button>
+      <button type="button" className="stock" onClick={toCache}
+        title={crew ? 'Click to move one from the lieutenant to the cache' : 'The lieutenant has none to send back'}>
+        <span className="label">Cache</span><b>{cache}</b>
+      </button>
+      <button type="button" className="stock buy" onClick={buy} title="Buy one for the lieutenant">
+        <span className="label">Buy</span><b>{money(cost)}</b>
+      </button>    </div>
+  );
+}
+
 function WeaponsSheet({ teamId }: { teamId: ID }) {
   const sim = useGame((s) => s.sim)!;
   const notify = useGame((s) => s.notify);
   const gang = sim.playerGang;
   const team = sim.world.teams[teamId];
-  const [offer,setOffer]=useState<{kind:WeaponId;action:'buy'|'sell';fromTeam:boolean}|null>(null);
-  useEffect(()=>setOffer(null),[teamId,sim]);
   if (!team) return null;
+  const sell = (id: WeaponId, fromTeam: boolean) => notify(act((s) => sellWeapon(s.world, gang.id, id, fromTeam ? teamId : undefined))!);
+  /** A gun bought for a crew that already has one for every man (lieutenant
+   * included) goes into the cache instead. Explosives always go to the crew. */
+  const buyForCrewOrCache = (id: WeaponId) => {
+    const crewSize = 1 + team.memberIds.length;
+    const guns = Object.entries(team.weapons).reduce((n, [k, c]) => n + (k === 'explosives' ? 0 : c), 0);
+    const toCache = id !== 'explosives' && guns >= crewSize;
+    const result = act((s) => buyWeapon(s.world, gang.id, id, toCache ? undefined : teamId));
+    if (!result) return;
+    notify(result.ok && toCache ? { ...result, message: `${result.message} Every man in the crew is armed, so it went into the cache.` } : result);
+  };
   return (
     <>
       <Hint>
@@ -299,35 +394,20 @@ function WeaponsSheet({ teamId }: { teamId: ID }) {
           <div className="muted" style={{ margin: '2px 0 5px' }}>
             {WEAPONS[id].desc}
           </div>
+          <StockCounts cache={gang.weapons[id] ?? 0} crew={team.weapons[id] ?? 0} cost={WEAPONS[id].cost}
+            toCrew={() => notify(act((s) => transferWeapon(s.world, gang.id, id, teamId, true))!)}
+            toCache={() => notify(act((s) => transferWeapon(s.world, gang.id, id, teamId, false))!)}
+            buy={() => buyForCrewOrCache(id)} />
           <div className="row wrap" style={{ gap: 4 }}>
-            <span className="tiny muted">
-              cache {gang.weapons[id] ?? 0} · team {team.weapons[id] ?? 0}
-            </span>
-            <button className="btn sm" onClick={() => setOffer({kind:id,action:'buy',fromTeam:true})}>
-              Buy
+            <button className="btn sm" disabled={!team.weapons[id]} onClick={() => sell(id, true)}>
+              Sell from Lieutenant
             </button>
-            <button className="btn sm" disabled={!team.weapons[id]} onClick={() => setOffer({kind:id,action:'sell',fromTeam:true})}>
-              Sell from team
-            </button>
-            <button className="btn sm" disabled={!gang.weapons[id]} onClick={() => setOffer({kind:id,action:'sell',fromTeam:false})}>
+            <button className="btn sm" disabled={!gang.weapons[id]} onClick={() => sell(id, false)}>
               Sell from cache
-            </button>
-            <button className="btn sm" onClick={() => notify(act((s) => transferWeapon(s.world, gang.id, id, teamId, true))!)}>
-              → Team
-            </button>
-            <button className="btn sm" onClick={() => notify(act((s) => transferWeapon(s.world, gang.id, id, teamId, false))!)}>
-              → Cache
             </button>
           </div>
         </div>
       ))}
-      {offer&&<ConfirmDialog text={offer.action==='buy'?
-        `Buy ${WEAPONS[offer.kind].name} for ${money(WEAPONS[offer.kind].cost)} and give it to ${team.name}? Cash in the safe: ${money(gang.cash)}.`:
-        `Sell ${WEAPONS[offer.kind].name} from ${offer.fromTeam?team.name:'the cache'} for ${money(Math.round(WEAPONS[offer.kind].cost*.5))}?`}
-        onNo={()=>setOffer(null)} onYes={()=>{
-          const result=act(s=>offer.action==='buy'?buyWeapon(s.world,gang.id,offer.kind,teamId):sellWeapon(s.world,gang.id,offer.kind,offer.fromTeam?teamId:undefined));
-          if(result){notify(result);setOffer(null);}
-        }}/>}
     </>
   );
 }
@@ -337,9 +417,17 @@ function VehiclesSheet({ teamId }: { teamId: ID }) {
   const notify = useGame((s) => s.notify);
   const gang = sim.playerGang;
   const team = sim.world.teams[teamId];
-  const [offer,setOffer]=useState<{kind:VehicleId;action:'buy'|'sell';fromTeam:boolean}|null>(null);
-  useEffect(()=>setOffer(null),[teamId,sim]);
   if (!team) return null;
+  const sell = (id: VehicleId, fromTeam: boolean) => notify(act((s) => sellVehicle(s.world, gang.id, id, fromTeam ? teamId : undefined))!);
+  /** A vehicle bought for a crew whose cars already seat every man (lieutenant included) goes into the cache instead. */
+  const buyForCrewOrCache = (id: VehicleId) => {
+    const crewSize = 1 + team.memberIds.length;
+    const seats = VEHICLE_ORDER.reduce((n, k) => n + (team.vehicles[k] ?? 0) * VEHICLES[k].capacity, 0);
+    const toCache = seats >= crewSize;
+    const result = act((s) => buyVehicle(s.world, gang.id, id, toCache ? undefined : teamId));
+    if (!result) return;
+    notify(result.ok && toCache ? { ...result, message: `${result.message} The crew already has a seat for every man, so it went into the cache.` } : result);
+  };
   return (
     <>
       {VEHICLE_ORDER.map((id: VehicleId) => (
@@ -355,35 +443,20 @@ function VehiclesSheet({ teamId }: { teamId: ID }) {
             {VEHICLES[id].desc}
             <div className="tiny">Seats {VEHICLES[id].capacity} · cargo {VEHICLES[id].cargo} cases</div>
           </div>
+          <StockCounts cache={gang.vehicles[id] ?? 0} crew={team.vehicles[id] ?? 0} cost={VEHICLES[id].cost}
+            toCrew={() => notify(act((s) => transferVehicle(s.world, gang.id, id, teamId, true))!)}
+            toCache={() => notify(act((s) => transferVehicle(s.world, gang.id, id, teamId, false))!)}
+            buy={() => buyForCrewOrCache(id)} />
           <div className="row wrap" style={{ gap: 4 }}>
-            <span className="tiny muted">
-              cache {gang.vehicles[id] ?? 0} · team {team.vehicles[id] ?? 0}
-            </span>
-            <button className="btn sm" title="Purchase for this crew" onClick={() => setOffer({kind:id,action:'buy',fromTeam:true})}>
-              Buy
+            <button className="btn sm" disabled={!team.vehicles[id]} onClick={() => sell(id, true)}>
+              Sell from Lieutenant
             </button>
-            <button className="btn sm" disabled={!team.vehicles[id]} onClick={() => setOffer({kind:id,action:'sell',fromTeam:true})}>
-              Sell from team
-            </button>
-            <button className="btn sm" disabled={!gang.vehicles[id]} onClick={() => setOffer({kind:id,action:'sell',fromTeam:false})}>
+            <button className="btn sm" disabled={!gang.vehicles[id]} onClick={() => sell(id, false)}>
               Sell from cache
-            </button>
-            <button className="btn sm" onClick={() => notify(act((s) => transferVehicle(s.world, gang.id, id, teamId, true))!)}>
-              → Team
-            </button>
-            <button className="btn sm" onClick={() => notify(act((s) => transferVehicle(s.world, gang.id, id, teamId, false))!)}>
-              → Cache
             </button>
           </div>
         </div>
       ))}
-      {offer&&<ConfirmDialog text={offer.action==='buy'?
-        `Buy a ${VEHICLES[offer.kind].name} for ${money(VEHICLES[offer.kind].cost)} and give it to ${team.name}? Cash in the safe: ${money(gang.cash)}.`:
-        `Sell a ${VEHICLES[offer.kind].name} from ${offer.fromTeam?team.name:'the cache'} for ${money(Math.round(VEHICLES[offer.kind].cost*.5))}?`}
-        onNo={()=>setOffer(null)} onYes={()=>{
-          const result=act(s=>offer.action==='buy'?buyVehicle(s.world,gang.id,offer.kind,teamId):sellVehicle(s.world,gang.id,offer.kind,offer.fromTeam?teamId:undefined));
-          if(result){notify(result);setOffer(null);}
-        }}/>}
     </>
   );
 }
@@ -560,8 +633,7 @@ function PersonSheet({ person, teamId }: { person: Person; teamId?: ID }) {
           className="btn"
           title="Make this hood a lieutenant, if one of the eight tabs is free"
           onClick={() => {
-            notify(act((s) => promote(s.world, gang.id, person.id))!);
-            setSheet(null);
+            promoteAndShow(person.id);
           }}
         >
           Promote

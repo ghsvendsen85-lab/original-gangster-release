@@ -17,7 +17,7 @@ import { MapsTab } from './MapsTab';
 import { LieutenantAreaControls } from './LieutenantAreaControls';
 import { NewspaperTab } from './NewspaperTab';
 import { OptionsTab } from './OptionsTab';
-import { RightSheet } from './RightSheet';
+import { ResourceWindow } from './RightSheet';
 import { TutorialPanel } from '../TutorialPanel';
 import { SpecialistJobCard } from '../SpecialistJobCard';
 import { SPECIALIST_JOB_NAMES } from '../../sim/specialistJobs';
@@ -215,22 +215,23 @@ export function Organizer() {
             </div>
           </div>
           {withStrip && <LieutenantStrip />}
+          {!staff && !jobCard && (
+            <div className="gang-summary paper">
+              <div className="gang-summary-boss"><b>{boss?.name ?? 'The Boss'}</b></div>
+              <div className="gang-summary-body">
+                <span>Cash <b><MoneyRoll value={gang.cash} /></b></span>
+                <span>Assets {money(gangAssets(w, gang))}</span>
+                <span>{territoryCount(w, gang.id)} blocks</span>
+                <span>{gangManpower(w, gang)} men · {money(wages)} weekly wages</span>
+              </div>
+            </div>
+          )}
 
           <div key={staff ? `staff-${staff.type}` : jobCard ? `job-${jobCard.type}` : tab} id="organizer-page" className="paper page" role="tabpanel" aria-label={TABS.find(t => t.id === tab)?.label}>
             {staff ? <SpecialistJobCard /> : jobCard ? <JobCardPanel /> : <>
               {withStrip && <label className="mobile-crew">Lieutenant <select aria-label="Crew" value={selectedTeamId ?? ''} onChange={e => useGame.getState().selectTeam(Number(e.target.value))}>
                 {gang.teamIds.map(id => <option key={id} value={id}>{w.teams[id]?.name}</option>)}
               </select></label>}
-              <details className="gang-summary">
-                <summary><span>Cash <b><MoneyRoll value={gang.cash} /></b></span><span>Gang details</span></summary>
-                <div className="gang-summary-body">
-                  <b>{boss?.name ?? 'The Boss'}</b>
-                  <span>Assets {money(gangAssets(w, gang))}</span>
-                  <span>{territoryCount(w, gang.id)} blocks</span>
-                  <span>{gangManpower(w, gang)} men · {money(wages)} weekly wages</span>
-                </div>
-              </details>
-
               <div className="page-body">
                 <TutorialPanel />
                 {tab === 'lieutenants' && <LieutenantsTab />}
@@ -262,7 +263,7 @@ export function Organizer() {
           </div>
         </div>
 
-        <RightSheet />
+        <ResourceWindow />
       </div>
       {mapButtons}
     </>

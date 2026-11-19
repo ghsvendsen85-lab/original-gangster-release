@@ -5,8 +5,10 @@ import { patchInstancedUv } from './materialUv';
 import { VEHICLE_PROFILE } from './vehicles';
 
 const DIRECTIONS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'] as const;
-const ROW: Record<VehicleId, number> = { coupe: 0, truck: 1, speedster: 2 };
-const WORLD_CELL: Record<VehicleId, number> = { coupe: 5.1, truck: 5.55, speedster: 5.0 };
+/** The vehicles painted in the atlas. The motorcycle has no sprite and is always drawn as a model. */
+export type AtlasVehicleId = Exclude<VehicleId, 'motorcycle'>;
+const ROW: Record<AtlasVehicleId, number> = { coupe: 0, truck: 1, speedster: 2 };
+const WORLD_CELL: Record<AtlasVehicleId, number> = { coupe: 5.1, truck: 5.55, speedster: 5.0 };
 const ATLAS_IMAGE = `${import.meta.env.BASE_URL}art/city/vehicle-fleet-eight-atlas.png`;
 const ATLAS_REPORT = `${import.meta.env.BASE_URL}art/city/vehicle-fleet-eight-atlas.json`;
 
@@ -14,7 +16,7 @@ interface FrameBounds { bbox: [number, number, number, number] }
 interface AtlasReport {
   cell: number;
   directions: string[];
-  vehicles: Record<VehicleId, Record<string, FrameBounds>>;
+  vehicles: Record<AtlasVehicleId, Record<string, FrameBounds>>;
 }
 
 /** Quantize a car's world-space nose into the eight directions seen by the camera. */
@@ -128,7 +130,7 @@ export class VehicleSpriteLayer {
     this.up.set(0, 1, 0).applyQuaternion(camera.quaternion);
   }
 
-  push(kind: VehicleId, x: number, z: number, yaw: number): void {
+  push(kind: AtlasVehicleId, x: number, z: number, yaw: number): void {
     if (!this.ready || !this.report) return;
     const direction = vehicleScreenDirection(yaw, this.right, this.up);
     const row = ROW[kind];

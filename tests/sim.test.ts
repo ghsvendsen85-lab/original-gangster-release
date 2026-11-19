@@ -4,6 +4,8 @@ import { defaultGameOptions } from '../src/app/newGame';
 import {
   GO_STRAIGHT_ASSETS,
   MAX_TEAMS,
+  MAX_PLAYER_TEAMS,
+  maxTeams,
   MAX_TEAM_SIZE,
   SNITCH_COUNT,
   VEHICLES,
@@ -127,7 +129,7 @@ describe('the working week', () => {
         expect(t.memberIds.length).toBeLessThanOrEqual(MAX_TEAM_SIZE - 1);
         for (const m of t.memberIds) expect(w.people[m]).toBeDefined();
       }
-      expect(gang.teamIds.length).toBeLessThanOrEqual(MAX_TEAMS);
+      expect(gang.teamIds.length).toBeLessThanOrEqual(maxTeams(gang));
     }
 
     for (const b of Object.values(w.buildings)) {
@@ -184,6 +186,9 @@ describe('numbers taken from the original manual', () => {
 
   it('keeps the structural limits', () => {
     expect(MAX_TEAMS).toBe(8);
+    expect(MAX_PLAYER_TEAMS).toBe(12);
+    expect(maxTeams({ isPlayer: true })).toBe(MAX_PLAYER_TEAMS);
+    expect(maxTeams({ isPlayer: false })).toBe(MAX_TEAMS);
     expect(MAX_TEAM_SIZE).toBe(10);
     expect(SNITCH_COUNT).toBe(3);
     expect(WAREHOUSE_GOODS_CAP).toBe(300);

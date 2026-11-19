@@ -24,7 +24,7 @@ const rivalHood = (w: ReturnType<typeof fixture>['w'], gangId: number) => {
 };
 /** Seat the crew in one car, the first man at the wheel, on the road. */
 function inCar(s: ReturnType<typeof fixture>, ids: number[]) {
-  s.team.vehicles = { coupe: 1, truck: 0, speedster: 0 };
+  s.team.vehicles = { coupe: 1, truck: 0, speedster: 0, motorcycle: 0 };
   const people = ids.map(id => s.w.people[id]);
   const office = allBuildings(s.w).find(b => b.isHQ && b.ownerGangId === s.gang.id)!;
   for (const p of people) p.pos = buildingDoor(s.w, office);
@@ -64,7 +64,7 @@ describe('attacking from cars', () => {
 
   it('a street order to a hood walking to his car releases the car', () => {
     const s = fixture(), [a] = s.team.memberIds, hood = s.w.people[a];
-    s.team.vehicles = { coupe: 1, truck: 0, speedster: 0 };
+    s.team.vehicles = { coupe: 1, truck: 0, speedster: 0, motorcycle: 0 };
     hood.pos = { x: 2 * CELL + 20, y: 2 * CELL - 9 };
     allocateTransport(s.w, s.team, [hood], { x: 9 * CELL, y: 9 * CELL }, -1, 'goTo');
     expect(hood.vehicleKey).toBeDefined(); expect(hood.inVehicle).toBe(false);

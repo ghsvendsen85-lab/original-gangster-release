@@ -5,7 +5,7 @@ import type { EquipmentModel } from './equipmentModels';
  * Sample the front lip of the actual mesh so shorter barrels and imported
  * proportions do not inherit a generic effect offset. No geometry is changed. */
 export function addMuzzleAnchor(kind:EquipmentModel,root:THREE.Object3D):void {
-  if(!['pistol','twinPistols','rifle','shotgun','tommy'].includes(kind))return;
+  if(!['pistol','twinPistols','rifle','shotgun','tommy','bar'].includes(kind))return;
   root.updateMatrixWorld(true);
   const inverse=root.matrixWorld.clone().invert(),points:THREE.Vector3[]=[];
   const bounds=new THREE.Box3();

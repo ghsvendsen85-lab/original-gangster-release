@@ -272,7 +272,7 @@ describe("who makes the arrest (0x49A530's callers) and its edge", () => {
     const cop = Object.values(w.people).find(p => p.role === 'police')!;
     for (const p of Object.values(w.people)) if (p.role === 'police' && p !== cop) p.status = 'jailed';
     for (const p of [driver, mate, cop]) Object.assign(p, { status: 'active', inVehicle: false, buildingId: null, orderId: null, streetOrder: null });
-    team.vehicles = { coupe: 1, truck: 0, speedster: 0 };
+    team.vehicles = { coupe: 1, truck: 0, speedster: 0, motorcycle: 0 };
     for (const p of [driver, mate]) p.pos = buildingDoor(w, hq(w, player));
     allocateTransport(w, team, [driver, mate], { x: 400, y: 400 }, -1, 'goTo');
     const car = w.vehicleFleet![driver.vehicleKey!];

@@ -16,7 +16,7 @@ function fixture(){
  staffFirstCrew(sim);
  const w=sim.world,g=sim.playerGang,t=w.teams[g.teamIds[0]];
  w.orders={};for(const team of Object.values(w.teams)){team.orderIds=[];team.timeUsed=0;}
- t.vehicles={coupe:0,truck:1,speedster:0};
+ t.vehicles={coupe:0,truck:1,speedster:0,motorcycle:0};
  const warehouses=Object.values(w.buildings).filter(b=>b.typeId==='warehouse'),store=warehouses[0];
  for(const b of warehouses)b.ownerGangId=null;
  store.ownerGangId=g.id;store.stock={liquor:50,stolen:0,counterfeit:0};
@@ -144,7 +144,7 @@ describe('physical cargo returns and raids',()=>{
 
 describe('transport previews use the dispatched people and vehicles',()=>{
  it('uses the explicitly selected lieutenant as driver rather than an ordinary hood',()=>{
-  const s=fixture();s.t.vehicles={coupe:1,truck:0,speedster:0};const lt=s.w.people[s.t.lieutenantId];lt.skills.driving=0;
+  const s=fixture();s.t.vehicles={coupe:1,truck:0,speedster:0,motorcycle:0};const lt=s.w.people[s.t.lieutenantId];lt.skills.driving=0;
   const target=Object.values(s.w.buildings).find(b=>b.ownerGangId==null&&b.cls==='commercial'&&!typeOf(b)?.special)!;
   const input={teamId:s.t.id,type:'extort' as const,buildingIds:[target.id],opts:{manpower:1,preferredHoodId:lt.id}};
   const slow=previewOrder(s.w,s.g.id,input)!.estimatedMinutes;lt.skills.driving=5;const fast=previewOrder(s.w,s.g.id,input)!.estimatedMinutes;
@@ -159,7 +159,7 @@ describe('transport previews use the dispatched people and vehicles',()=>{
   expect(Math.min(...people.map(p=>personSpeed(p,s.w)))).toBe(speed);
  });
  it('does not promise an occupied car to another job or silently replace a busy named hood',()=>{
-  const s=fixture();s.t.vehicles={coupe:1,truck:0,speedster:0};const hq=Object.values(s.w.buildings).find(b=>b.isHQ&&b.ownerGangId===s.g.id)!,target=Object.values(s.w.buildings).find(b=>b.ownerGangId==null&&b.cls==='commercial'&&!typeOf(b)?.special&&dist(buildingDoor(s.w,b),buildingDoor(s.w,hq))>DRIVE_MIN_DISTANCE+10)!;
+  const s=fixture();s.t.vehicles={coupe:1,truck:0,speedster:0,motorcycle:0};const hq=Object.values(s.w.buildings).find(b=>b.isHQ&&b.ownerGangId===s.g.id)!,target=Object.values(s.w.buildings).find(b=>b.ownerGangId==null&&b.cls==='commercial'&&!typeOf(b)?.special&&dist(buildingDoor(s.w,b),buildingDoor(s.w,hq))>DRIVE_MIN_DISTANCE+10)!;
   const p=s.w.people[s.t.memberIds[0]];issueOrder(s.w,s.g.id,{teamId:s.t.id,type:'extort',buildingIds:[target.id],opts:{manpower:1,preferredHoodId:p.id}});s.sim.launchWeek();
   const other=s.w.people[s.t.memberIds[1]];expect(plannedTravelSpeed(s.w,s.t,[other],'extort')).toBe(WALK_SPEED);
   issueOrder(s.w,s.g.id,{teamId:s.t.id,type:'extort',buildingIds:[target.id],opts:{manpower:1,preferredHoodId:p.id}});

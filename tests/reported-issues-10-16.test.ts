@@ -27,7 +27,7 @@ describe('issue 10 item 13: a crew sent after a person by car', () => {
     w.orders = {};
     for (const t of Object.values(w.teams)) { t.orderIds = []; t.timeUsed = 0; }
     expect(buyWeapon(w, gang.id, 'pistol', team.id).ok).toBe(true);
-    team.vehicles = { coupe: 1, truck: 0, speedster: 0 };
+    team.vehicles = { coupe: 1, truck: 0, speedster: 0, motorcycle: 0 };
     const door = buildingDoor(w, allBuildings(w).find(b => b.isHQ && b.ownerGangId === gang.id)!);
     // A shopkeeper far enough off to be driven to: he stands inside, well back from the kerb the car stops at.
     const victim = Object.values(w.people).filter(p => p.role === 'owner' && p.status === 'active' && p.buildingId != null && p.gangId == null)
@@ -88,7 +88,7 @@ describe('issue 11: the crew\'s week is its people\'s time', () => {
 describe('issue 10 item 6: queued orders are timed again when the crew changes', () => {
   it('shortens a queued journey when a car is handed over, and re-totals the week', () => {
     const { w, gang, team } = fixture();
-    team.vehicles = { coupe: 0, truck: 0, speedster: 0 };
+    team.vehicles = { coupe: 0, truck: 0, speedster: 0, motorcycle: 0 };
     gang.vehicles.coupe = 1;
     const door = buildingDoor(w, allBuildings(w).find(b => b.isHQ && b.ownerGangId === gang.id)!);
     const far = allBuildings(w).filter(b => isValidAreaTarget(w, gang.id, 'explore', b))

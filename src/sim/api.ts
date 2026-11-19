@@ -7,7 +7,7 @@ import { cityBlockAt } from './cityLayout';
 import { orderStaffing } from './orderStaffing';
 import { observeTargetRace } from './targetRace';
 import {
-  MAX_TEAMS,
+  maxTeams,
   MAX_TEAM_SIZE,
   MINUTES_PER_WEEK,
   ORDERS,
@@ -602,7 +602,7 @@ export function promote(w: WorldState, gangId: ID, personId: ID): ApiResult {
   const crew = p.teamId == null ? null : w.teams[p.teamId];
   if (!gang.poolIds.includes(personId) && !(crew?.gangId === gangId && crew.memberIds.includes(personId)))
     return fail('That hood is not in the pool or a crew.');
-  if (gang.teamIds.length >= MAX_TEAMS) return fail('You already have eight lieutenants.');
+  if (gang.teamIds.length >= maxTeams(gang)) return fail(`You already have ${maxTeams(gang)} lieutenants.`);
   const team = promoteToLieutenant(w, gang, p);
   // The crew he left has one fewer for its queued orders.
   if (team && crew) reestimateTeamOrders(w, w.teams[crew.id]);
@@ -699,7 +699,7 @@ export function hireRecruit(
   // Decide where they are going before taking them on, so a refusal never
   // leaves a half-hired man on the books.
   const wantsLieutenant = destination === 'lieutenant';
-  const noSlot = wantsLieutenant && gang.teamIds.length >= MAX_TEAMS;
+  const noSlot = wantsLieutenant && gang.teamIds.length >= maxTeams(gang);
 
   p.gangId = gangId;
   p.buildingId = null;

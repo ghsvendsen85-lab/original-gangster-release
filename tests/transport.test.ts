@@ -15,7 +15,7 @@ function fixture(){
  staffFirstCrew(sim);
  const w=sim.world,g=sim.playerGang,t=w.teams[g.teamIds[0]];
  w.orders={};for(const team of Object.values(w.teams)){team.orderIds=[];team.timeUsed=0;}
- t.vehicles={coupe:0,truck:0,speedster:0};
+ t.vehicles={coupe:0,truck:0,speedster:0,motorcycle:0};
  const people=t.memberIds.map(id=>w.people[id]);for(const p of people)p.skills.driving=3;
  const hq=Object.values(w.buildings).find(b=>b.isHQ&&b.ownerGangId===g.id)!;
  const target=Object.values(w.buildings).find(b=>b.ownerGangId==null&&b.cls==='commercial'&&dist(buildingDoor(w,b),buildingDoor(w,hq))>220)!;
@@ -94,7 +94,7 @@ describe('real crew transport',()=>{
   expect(s.g.cash).toBe(cash);expect(s.t.vehicles.coupe).toBe(1);
  });
  it('only counts cargo space actually accompanying the actors',()=>{
-  const s=fixture();s.t.vehicles={coupe:1,truck:1,speedster:0};const o=queue(s,2);s.sim.launchWeek();
+  const s=fixture();s.t.vehicles={coupe:1,truck:1,speedster:0,motorcycle:0};const o=queue(s,2);s.sim.launchWeek();
   expect(cargoCapacity(s.w,o.assignedIds.map(id=>s.w.people[id]))).toBe(VEHICLES.coupe.cargo);
  });
  it('cancellation returns the actual car before it can be sold',()=>{

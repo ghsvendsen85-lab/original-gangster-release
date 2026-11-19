@@ -68,7 +68,7 @@ import { previewVehicle } from '../sim/movement';
 import { specialistParticipants } from '../sim/specialistJobs';
 import { vehicleDriver, atOffice, officeDoors } from '../sim/transport';
 import { siteBuilding } from '../sim/premises';
-import { createVehicleMaterial, VEHICLE_PROFILE, vehicleGeometry, vehicleForPerson, vehicleLightGeometry } from './vehicles';
+import { createVehicleMaterial, MOTORCYCLE_SEAT, VEHICLE_PROFILE, vehicleGeometry, vehicleForPerson, vehicleLightGeometry } from './vehicles';
 import { VehicleSpriteLayer } from './vehicleSpriteLayer';
 import { SculptReviewLayer } from './sculptReviewLayer';
 import { SCULPT_VEHICLE_PROFILE } from './sculptVehicles';
@@ -354,6 +354,7 @@ export class CityRenderer {
   private sedans!: InstancePool;
   private trucks!: InstancePool;
   private speedsters!: InstancePool;
+  private motorcycles!: InstancePool;
   private headlamps!: InstancePool;
   private vehicleSprites: VehicleSpriteLayer | null = null;
   private preferVehicleSprites = false;
@@ -970,11 +971,13 @@ export class CityRenderer {
       dynamic: true,
     });
     this.speedsters = new InstancePool(vehicleGeometry('speedster'), carMat, MAX_AGENTS, { color: true, castShadow: true, dynamic: true });
+    this.motorcycles = new InstancePool(vehicleGeometry('motorcycle'), carMat, MAX_AGENTS, { color: true, castShadow: true, dynamic: true });
     this.sedans.mesh.name = 'vehicle-coupe';
     this.trucks.mesh.name = 'vehicle-truck';
     this.speedsters.mesh.name = 'vehicle-speedster';
+    this.motorcycles.mesh.name = 'vehicle-motorcycle';
     this.headlamps = new InstancePool(vehicleLightGeometry(), this.headlampMat, capacity, { dynamic: true });
-    for (const p of [this.sedans, this.trucks, this.speedsters, this.headlamps]) this.scene.add(p.mesh);
+    for (const p of [this.sedans, this.trucks, this.speedsters, this.motorcycles, this.headlamps]) this.scene.add(p.mesh);
     // Delivered models are the default. Explicit switches retain the audit/fallback views.
     this.preferVehicleSprites = new URLSearchParams(window.location.search).get('vehicleSprites') === '1';
     if (this.preferVehicleSprites) this.ensureVehicleSprites();
@@ -1014,6 +1017,8 @@ export class CityRenderer {
     // The open car's seated 3D driver currently protrudes through the billboard
     // in one camera view. Keep that pairing intact until a matching rider exists.
     this.speedsters.mesh.visible = this.streetsOpen && !this.sculptModelsActive && !(active && this.reviewSpeedsterSprite);
+    // No detailed model or sprite exists for the motorcycle: it is always this one.
+    this.motorcycles.mesh.visible = this.streetsOpen;
   }
 
   /** Switch between detailed models and the lightweight fallback. */
@@ -2177,6 +2182,13 @@ export class CityRenderer {
           if(nozzle)this.emergencyHoses?.push(nozzle,response.lookAt,surface,action.time);}
         if (visibleIds.has(p.id)) this.characterDetailStats[detailed ? 'detailed' : 'simplified']++;
       }
+      else if (vehicle === 'motorcycle') {
+        // The rider sits astride the saddle, in the open whatever the model set.
+        this.dummy.position.set(pos.x - Math.sin(facing) * MOTORCYCLE_SEAT.back, surface - MOTORCYCLE_SEAT.drop, pos.y - Math.cos(facing) * MOTORCYCLE_SEAT.back);
+        this.dummy.scale.setScalar(1);
+        this.dummy.updateMatrix();
+        this.actors.push(p, this.dummy.matrix, this.colorScratch, 0, -1);
+      }
       else if (vehicle === 'speedster' && !this.sculptModelsActive) {
         this.dummy.position.set(pos.x - Math.sin(facing) * .72, surface - .10, pos.y - Math.cos(facing) * .72);
         this.dummy.scale.setScalar(1);
@@ -2305,6 +2317,7 @@ export class CityRenderer {
     this.sedans.reset();
     this.trucks.reset();
     this.speedsters.reset();
+    this.motorcycles.reset();
     this.sculptModels?.resetVehicles();
     this.headlamps.reset();
     this.vehicleSprites?.reset(camera);
@@ -2354,11 +2367,13 @@ export class CityRenderer {
       this.dummy.scale.setScalar(1);
       this.dummy.updateMatrix();
       this.colorScratch.setHex(d.hex);
-      if (spriteMode && (d.kind !== 'speedster' || this.reviewSpeedsterSprite))
+      if (d.kind === 'motorcycle') this.motorcycles.push(this.dummy.matrix, this.colorScratch);
+      else if (spriteMode && (d.kind !== 'speedster' || this.reviewSpeedsterSprite))
         this.vehicleSprites!.push(d.kind, d.x, d.z, d.facing - Math.PI / 2);
       else if (this.sculptModelsActive && this.sculptModels?.pushVehicle(d.kind, this.dummy.matrix)) { /* Detailed vehicle */ }
       else (d.kind === 'truck' ? this.trucks : d.kind === 'speedster' ? this.speedsters : this.sedans).push(this.dummy.matrix, this.colorScratch);
-      if (dusk > .02) {
+      // The headlamp glow is a car's pair, a car's width apart; a motorcycle has one lamp.
+      if (dusk > .02 && d.kind !== 'motorcycle') {
         const { nose, lampY } = this.vehicleProfile(d.kind);
         const yaw = d.facing - Math.PI / 2;
         this.dummy.position.set(d.x + Math.cos(yaw) * nose, lampY + VEHICLE_GROUND_CLEARANCE, d.z - Math.sin(yaw) * nose);
@@ -2370,6 +2385,7 @@ export class CityRenderer {
     this.sedans.commit();
     this.trucks.commit();
     this.speedsters.commit();
+    this.motorcycles.commit();
     this.sculptModels?.commitVehicles();
     this.vehicleSprites?.commit();
     this.headlamps.commit();
@@ -3264,6 +3280,7 @@ export class CityRenderer {
       this.sedans,
       this.trucks,
       this.speedsters,
+      this.motorcycles,
       this.headlamps,
     ]) {
       p?.dispose();

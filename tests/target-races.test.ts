@@ -16,7 +16,7 @@ function fixture(mode: 'wealth' | 'territory' = 'wealth', seed = 404) {
     startMoney: 100_000, wealthTarget: 500_000, territoryTarget: 50 });
   const w = sim.world, player = sim.playerGang, rival = Object.values(w.gangs).find(g => !g.isPlayer)!;
   w.orders = {};
-  for (const team of Object.values(w.teams)) { team.orderIds = []; team.timeUsed = 0; team.vehicles = { coupe: 0, truck: 0, speedster: 0 }; }
+  for (const team of Object.values(w.teams)) { team.orderIds = []; team.timeUsed = 0; team.vehicles = { coupe: 0, truck: 0, speedster: 0, motorcycle: 0 }; }
   return { sim, w, player, rival };
 }
 function reachWealth(w: WorldState, g: Gang, extra = 0) {

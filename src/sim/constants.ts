@@ -49,7 +49,11 @@ export const DRIVE_SPEED = WALK_SPEED * 3.4;
  */
 export const DRIVE_MIN_DISTANCE = 18.75 * CELL / 5;
 
+/** Lieutenants a computer gang may run (the original's eight). */
 export const MAX_TEAMS = 8;
+/** Lieutenants the player may run: a remake change, raised from eight. */
+export const MAX_PLAYER_TEAMS = 12;
+export const maxTeams = (gang: { isPlayer?: boolean }) => gang.isPlayer ? MAX_PLAYER_TEAMS : MAX_TEAMS;
 export const MAX_TEAM_SIZE = 10;
 export const SNITCH_COUNT = 3;
 /** Citizens walking the streets, per block. Every pedestrian is one of them. */
@@ -107,6 +111,14 @@ export const WEAPONS: Record<
     accuracy: 0.78,
     desc: 'Rarely available heavy automatics. In the right hands they out-perform everything.',
   },
+  bar: {
+    name: 'B.A.R.',
+    cost: 2500,
+    range: 46,
+    damage: 50,
+    accuracy: 0.68,
+    desc: 'The Browning Automatic Rifle: a rifle’s reach with bursts of full-power rounds. Heavy, loud and army issue.',
+  },
   explosives: {
     name: 'Explosives',
     cost: 500,
@@ -123,6 +135,7 @@ export const WEAPON_ORDER: WeaponId[] = [
   'rifle',
   'tommy',
   'twinPistols',
+  'bar',
   'explosives',
 ];
 
@@ -154,9 +167,17 @@ export const VEHICLES: Record<
     cargo: 20,
     desc: 'Fast and manoeuvrable. Ideal for jobs that must be finished in a hurry.',
   },
+  motorcycle: {
+    name: 'Motorcycle',
+    cost: 1200,
+    speed: 1.6,
+    capacity: 1,
+    cargo: 5,
+    desc: 'The quickest thing on the road, and cheap. Carries one man and next to nothing else.',
+  },
 };
 
-export const VEHICLE_ORDER: VehicleId[] = ['coupe', 'truck', 'speedster'];
+export const VEHICLE_ORDER: VehicleId[] = ['coupe', 'truck', 'speedster', 'motorcycle'];
 
 export interface OrderDef {
   type: OrderType;

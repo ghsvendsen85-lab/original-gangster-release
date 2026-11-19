@@ -47,7 +47,7 @@ describe('period equipment and roles',()=> {
  it('uses actual metre-scale weapons with shared geometry and a single owned material',()=> {
   const library=new EquipmentModels();
   try{
-   const lengths:Record<WeaponId,[number,number]>={pistol:[.25,.34],twinPistols:[.20,.25],shotgun:[1.14,1.25],rifle:[1.03,1.15],tommy:[.81,.91],explosives:[.22,.28]};
+   const lengths:Record<WeaponId,[number,number]>={pistol:[.25,.34],twinPistols:[.20,.25],shotgun:[1.14,1.25],rifle:[1.03,1.15],tommy:[.81,.91],bar:[1.14,1.25],explosives:[.22,.28]};
    for(const [name,[min,max]] of Object.entries(lengths)){
     const a=library.create(name as WeaponId) as THREE.Mesh,b=library.create(name as WeaponId) as THREE.Mesh;
     const size=a.geometry.boundingBox!.getSize(new THREE.Vector3());

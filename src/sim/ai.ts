@@ -297,7 +297,7 @@ function manageCashflow(w: WorldState, gang: Gang): void {
   const target = wageBill * 2 + 500;
   if (gang.cash >= target) return;
 
-  for (const wid of ['pistol', 'shotgun', 'rifle', 'tommy'] as (keyof Gang['weapons'])[]) {
+  for (const wid of ['pistol', 'shotgun', 'rifle', 'tommy', 'bar'] as (keyof Gang['weapons'])[]) {
     while (gang.cash < target && (gang.weapons[wid] ?? 0) > 0) {
       if (!sellWeapon(w, gang.id, wid).ok) break;
     }
@@ -307,7 +307,7 @@ function manageCashflow(w: WorldState, gang: Gang): void {
       }
     }
   }
-  for (const vid of ['coupe', 'truck', 'speedster'] as (keyof Gang['vehicles'])[]) {
+  for (const vid of ['coupe', 'truck', 'speedster', 'motorcycle'] as (keyof Gang['vehicles'])[]) {
     // Loaded trucks can survive the weekend. A refused sale leaves inventory
     // unchanged; try other assets instead of retrying the same vehicle forever.
     while (gang.cash < target && (gang.vehicles[vid] ?? 0) > 0) {
@@ -553,6 +553,8 @@ function manageEquipment(w: WorldState, rng: Rng, gang: Gang): void {
       { item: 'shotgun' as const, weight: atWar ? 3 : 1 },
       { item: 'rifle' as const, weight: atWar ? 3 : 1 },
       { item: 'tommy' as const, weight: atWar && gang.cash > 20000 ? 2 : 0 },
+      // A zero weight takes no part in the roll, so peacetime buying is unchanged.
+      { item: 'bar' as const, weight: atWar && gang.cash > 25000 ? 1 : 0 },
       { item: 'explosives' as const, weight: atWar ? 2 : 0 },
     ]);
     if (spent + WEAPONS[choice].cost > budget) break;

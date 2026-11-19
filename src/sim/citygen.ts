@@ -746,8 +746,8 @@ export function createWorld(options: GameOptions): { world: WorldState; rng: Rng
       lawyerId: null,
       // The player's three pistols all start in the cache, to be handed out as he
       // sees fit; a computer gang's first crew starts with one of them.
-      weapons: { pistol: isPlayer ? 3 : 2, shotgun: 0, rifle: 0, tommy: 0, twinPistols: 0, explosives: 0 },
-      vehicles: { coupe: 1, truck: 0, speedster: 0 },
+      weapons: { pistol: isPlayer ? 3 : 2, shotgun: 0, rifle: 0, tommy: 0, twinPistols: 0, bar: 0, explosives: 0 },
+      vehicles: { coupe: 1, truck: 0, speedster: 0, motorcycle: 0 },
       offered: {},
       known: {},
       evadingTax: false,
@@ -832,8 +832,8 @@ export function createWorld(options: GameOptions): { world: WorldState; rng: Rng
       lieutenantId: lt.id,
       name: lt.name.split(' ')[0] + "'s Crew",
       memberIds: [],
-      weapons: { pistol: isPlayer ? 0 : 1, shotgun: 0, rifle: 0, tommy: 0, twinPistols: 0, explosives: 0 },
-      vehicles: { coupe: 1, truck: 0, speedster: 0 },
+      weapons: { pistol: isPlayer ? 0 : 1, shotgun: 0, rifle: 0, tommy: 0, twinPistols: 0, bar: 0, explosives: 0 },
+      vehicles: { coupe: 1, truck: 0, speedster: 0, motorcycle: 0 },
       allocatedBlockIds: [],
       orderIds: [],
       timeUsed: 0,

@@ -55,7 +55,12 @@ export function useResourceDrop(target: ResourceTarget | null): [Record<string, 
       e.dataTransfer.dropEffect = 'move';
       if (!over) setOver(true);
     },
-    onDragLeave: () => setOver(false),
+    // Passing over a child fires dragleave on the parent: only clear when the pointer really leaves.
+    onDragLeave: (e: DragEvent) => {
+      const next = e.relatedTarget as Node | null;
+      if (next && (e.currentTarget as Node).contains(next)) return;
+      setOver(false);
+    },
     onDrop: (e: DragEvent) => {
       setOver(false);
       const item = readDrag(e);

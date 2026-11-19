@@ -41,7 +41,7 @@ describe('a game saved mid-week', () => {
   it('carries on exactly with a crew driving through the traffic', () => {
     compareAfterSave(() => {}, sim => {
       const w = sim.world, gang = sim.playerGang, team = w.teams[gang.teamIds[0]];
-      team.vehicles = { coupe: 2, truck: 0, speedster: 0 };
+      team.vehicles = { coupe: 2, truck: 0, speedster: 0, motorcycle: 0 };
       const office = allBuildings(w).find(b => b.isHQ && b.ownerGangId === gang.id)!, door = buildingDoor(w, office);
       const far = allBuildings(w).filter(b => b.ownerGangId == null && b.cls === 'commercial')
         .sort((a, b) => Math.hypot(buildingDoor(w, b).x - door.x, buildingDoor(w, b).y - door.y) - Math.hypot(buildingDoor(w, a).x - door.x, buildingDoor(w, a).y - door.y));

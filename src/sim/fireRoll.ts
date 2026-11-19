@@ -30,6 +30,10 @@ const HIT: Record<string, readonly number[]> = {
   // Row 8. Its last token sits in the file's plaintext trailer; the retail
   // reader fails that read and keeps 0 (deep/14 §6).
   twinPistols: [60, 45, 30, 26, 22, 20, 15, 0],
+  // Remake addition, not in the original tables: the B.A.R. fires two rounds an
+  // action (fireRate) at about two-thirds of a rifle's odds each, so a burst
+  // beats one rifle shot at every range the rifle reaches. Damage uses the rifle row.
+  bar: [26, 34, 34, 32, 18, 15, 12, 0],
 };
 const DAMAGE: Record<string, readonly number[]> = {
   pistol: [1, 1, 2, 2, 3, 3, 4, 4, 1, 1, 2, 2, 3, 3, 4, 4, 1, 1, 2, 2, 3, 3, 3, 4, 1, 1, 1, 2, 2, 3, 3, 4, 1, 1, 1, 1, 2, 2, 3, 4],
@@ -42,15 +46,15 @@ const DAMAGE: Record<string, readonly number[]> = {
 /** Hit rows by weapon. Twin pistols have their own Hit row, but the Damage
  * table declares eight weapons and never reads its ninth (twin-pistol) block,
  * so their damage uses the pistol row — zero past band 4. */
-const HIT_ROW: Record<Firearm, string> = { pistol: 'pistol', twinPistols: 'twinPistols', tommy: 'tommy', rifle: 'rifle', shotgun: 'shotgun' };
-const DAMAGE_ROW: Record<Firearm, string> = { pistol: 'pistol', twinPistols: 'pistol', tommy: 'tommy', rifle: 'rifle', shotgun: 'shotgun' };
+const HIT_ROW: Record<Firearm, string> = { pistol: 'pistol', twinPistols: 'twinPistols', tommy: 'tommy', rifle: 'rifle', shotgun: 'shotgun', bar: 'bar' };
+const DAMAGE_ROW: Record<Firearm, string> = { pistol: 'pistol', twinPistols: 'pistol', tommy: 'tommy', rifle: 'rifle', shotgun: 'shotgun', bar: 'rifle' };
 
 /**
  * The original rolls once per firing animation; Hit Table.xtx calls its numbers
  * "per action". The Tommy's animation is about a third as long as a rifle's
  * (2 frames against 8, plus a tick to re-aim), which pays for its low hit row.
  */
-export const fireRate = (weapon: Firearm | undefined) => weapon === 'tommy' ? 3 : 1;
+export const fireRate = (weapon: Firearm | undefined) => weapon === 'tommy' ? 3 : weapon === 'bar' ? 2 : 1;
 
 /** One original cell: a fifth of a block's street-to-street pitch. */
 export const ORIGINAL_CELL_METRES = CELL / 5;

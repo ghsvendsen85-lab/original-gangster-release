@@ -8,7 +8,8 @@ import type { FleetVehicle, Gang, ID, OrderType, Person, Team, Vec2, VehicleId, 
 
 // Seat counts, cargo units and speed multipliers are remake tuning. The manual
 // establishes relative performance, not these numerical limits.
-const kinds: VehicleId[] = ['speedster', 'coupe', 'truck'];
+// Fastest first. A motorcycle takes one man; the rest of the crew fill the cars.
+const kinds: VehicleId[] = ['motorcycle', 'speedster', 'coupe', 'truck'];
 export const FOOT_CARGO = 8;
 const busy = (v: FleetVehicle | undefined): boolean => !!v && (!!v.cargo || v.orderId != null || v.occupantIds.length > 0);
 export function vehicleOf(w: WorldState | undefined, p: Person): FleetVehicle | undefined {
@@ -128,7 +129,7 @@ function reserve(w:WorldState,key:string,v:FleetVehicle,people:Person[],to:Vec2,
 export function transportPlan(w:WorldState,team:Team,people:Person[],type:OrderType) {
   const remaining=[...people];
   const cars:{key:string;kind:VehicleId;slot:number;riders:Person[]}[]=[];
-  const preference=type==='export'||type==='raid'?['truck','coupe','speedster'] as VehicleId[]:kinds;
+  const preference=type==='export'||type==='raid'?['truck','coupe','speedster','motorcycle'] as VehicleId[]:kinds;
   for(const kind of preference){
     let free=(team.vehicles[kind]??0)-Object.values(w.vehicleFleet??{}).filter(v=>v.teamId===team.id&&v.kind===kind&&busy(v)).length;
     for(let slot=0;slot<(team.vehicles[kind]??0)&&remaining.length;slot++){
@@ -352,7 +353,7 @@ export function restoreLegacyTransport(w:WorldState):void {
     if(shared){p.vehicleKey=shared[0];shared[1].occupantIds.push(p.id);syncVehicle(w,shared[1]);continue;}
     let key:string|undefined,kind:VehicleId|undefined,slot=0;
     if(staff){key=`staff:${p.id}`;kind=staff;}
-    else for(const k of (p.orderId!=null&&['export','raid'].includes(w.orders[p.orderId]?.type)?['truck','coupe','speedster']:['coupe','truck','speedster']) as VehicleId[]){
+    else for(const k of (p.orderId!=null&&['export','raid'].includes(w.orders[p.orderId]?.type)?['truck','coupe','speedster','motorcycle']:['coupe','truck','speedster','motorcycle']) as VehicleId[]){
       for(let i=0;i<(team!.vehicles[k]??0);i++)if(!w.vehicleFleet?.[`team:${team!.id}:${k}:${i}`]){key=`team:${team!.id}:${k}:${i}`;kind=k;slot=i;break;}
       if(key)break;
     }

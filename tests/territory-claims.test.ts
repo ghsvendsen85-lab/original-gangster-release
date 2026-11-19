@@ -94,7 +94,7 @@ describe('ordinary territory follows owned/protected businesses, manual p.12', (
       p.skills.intelligence = 5; p.skills.firearms = 5;
     }
     target.pos.y += 2; target.hp = 1000;
-    team.weapons = { pistol: 1, shotgun: 0, rifle: 0, tommy: 0, twinPistols: 0, explosives: 0 };
+    team.weapons = { pistol: 1, shotgun: 0, rifle: 0, tommy: 0, twinPistols: 0, bar: 0, explosives: 0 };
     gang.offered[rival.id] = 'ceasefire'; rival.offered[gang.id] = 'alliance';
     const chance = vi.spyOn(sim.rng, 'chance').mockReturnValue(true);
     const range = vi.spyOn(sim.rng, 'range').mockReturnValue(1);
