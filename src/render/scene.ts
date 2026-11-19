@@ -2169,7 +2169,7 @@ export class CityRenderer {
       // envelope above, so no standing miniature protrudes through its roof.
       if (!driving) {
         const detailed = hdIds.has(p.id) && this.sculptModels?.pushCharacter(p.id, actorStyleFor(p),
-          this.dummy.matrix, motion.phase, walking,
+          this.dummy.matrix, motion.detailPhase, walking,
           {role:p.role,coat:hex,firefighting:action?.kind==='firefight',charred:burn&&escape!.fatal?Math.min(1,.25+burn.time/(BURNING_TIMING.flee+2)):0,weapon:burn||response||action?.kind==='strike'||action?.kind==='throw'?undefined:this.characterActions.heldWeapon(p.id),
             carriedProp:shuttle?.carrying?'crate':!burn&&action?.kind!=='throw'&&carriesExplosives(w,p)?'explosives':undefined,throwable:action?.kind==='throw'?action.throwable:undefined},
           {clock:this.simClock,delta:this.actionDelta,action,previewActions:this.actionsEnabled||action?.kind==='shoot',posture:p.closeCombat?.posture,...(shuttle ? (shuttle.carrying ? {gait:'carry' as const} : {}) : dailyMotion(w,p))});
@@ -2234,7 +2234,7 @@ export class CityRenderer {
       const motion = this.actorMotion.sample(driver.id, driver.pos.x, driver.pos.y, driver.walking, driver.facing);
       this.dummy.position.set(driver.pos.x, streetSurfaceHeight(this.world, driver.pos.x, driver.pos.y) + .008, driver.pos.y);
       this.dummy.rotation.set(0, driver.facing, 0); this.dummy.scale.setScalar(CHARACTER_SCALE); this.dummy.updateMatrix();
-      this.sculptModels?.pushCharacter(driver.id, 'worker', this.dummy.matrix, motion.phase, driver.walking,
+      this.sculptModels?.pushCharacter(driver.id, 'worker', this.dummy.matrix, motion.detailPhase, driver.walking,
         { role: 'citizen', coat: 0x4e5647, carriedProp: driver.carrying ? 'crate' : undefined },
         { clock: this.simClock, delta: this.actionDelta, gait: driver.carrying ? 'carry' : undefined });
     }

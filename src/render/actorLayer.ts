@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { Person } from '../sim/types';
 import { characterStyle } from './characterPresentation';
 import type {CharacterAction} from './characterActions';
+import { DETAILED_STRIDE_METRES } from './detailedCharacters';
 import { ACTOR_STYLES, ACTOR_STRIDE_METRES, actorGeometry, createActorMaterial, createActorDepthMaterial, type ActorStyle } from './actors';
 
 interface Batch {
@@ -19,19 +20,25 @@ export function actorStyleFor(person: Pick<Person, 'female' | 'role' | 'gangId' 
 
 /** Rendering-only gait history. Monotone travelled distance avoids reversing the gait on west/north routes. */
 export class ActorMotion {
-  private samples = new Map<number, { x: number; z: number; phase: number; facing: number }>();
+  private samples = new Map<number, { x: number; z: number; phase: number; detailPhase: number; facing: number }>();
 
   clear(): void { this.samples.clear(); }
 
-  sample(id: number, x: number, z: number, moving: boolean, facing: number): { phase: number; facing: number } {
+  /** `phase` drives the simple figures' gait; `detailPhase` the detailed
+   * characters' walk clip, whose stride is longer. */
+  sample(id: number, x: number, z: number, moving: boolean, facing: number): { phase: number; detailPhase: number; facing: number } {
     let previous = this.samples.get(id);
     if (!previous) {
-      previous = { x, z, phase: ((id * 1.37) % (Math.PI * 2)), facing };
+      const start = (id * 1.37) % (Math.PI * 2);
+      previous = { x, z, phase: start, detailPhase: start, facing };
       this.samples.set(id, previous);
     } else {
       const travelled = Math.hypot(x - previous.x, z - previous.z);
       // Camera culling, save restore or teleport must not animate a long unseen journey.
-      if (moving && travelled < 12) previous.phase = (previous.phase + travelled * Math.PI * 2 / ACTOR_STRIDE_METRES) % (Math.PI * 2);
+      if (moving && travelled < 12) {
+        previous.phase = (previous.phase + travelled * Math.PI * 2 / ACTOR_STRIDE_METRES) % (Math.PI * 2);
+        previous.detailPhase = (previous.detailPhase + travelled * Math.PI * 2 / DETAILED_STRIDE_METRES) % (Math.PI * 2);
+      }
       if (moving) previous.facing = facing;
       previous.x = x;
       previous.z = z;

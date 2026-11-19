@@ -8,6 +8,10 @@ import type { PersonRole } from '../sim/types';
  * Applied to each person's whole render group, so props and animation scale
  * with the body; simulation positions are unchanged. */
 export const CHARACTER_SCALE = 1.3;
+/** Ground covered by one cycle of the Sculpt walk clip, in world units at
+ * CHARACTER_SCALE. Measured from how fast a planted foot slides back during
+ * stance (1.73–2.18 across the bodies, 1.85 typical), so the feet do not skate. */
+export const DETAILED_STRIDE_METRES = 1.85;
 export const DETAILED_CHARACTER_HEIGHTS = {
   fedora:1.82, woman:1.73, worker:1.79, police:1.84,
   fbi:1.82, fbiChief:1.77, policeChief:1.79, judge:1.78, judgeWoman:1.69, photographer:1.80,
