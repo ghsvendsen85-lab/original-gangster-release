@@ -8,7 +8,7 @@ export const VEHICLE_PROFILE: Record<VehicleId, { length: number; width: number;
   truck: { length: 5.54, width: 1.98, height: 2.43, nose: 2.61, lampY: 1.06 },
   speedster: { length: 4.54, width: 1.84, height: 1.42, nose: 2.10, lampY: 0.84 },
   // The height includes the rider, who is drawn on the saddle.
-  motorcycle: { length: 2.30, width: 0.90, height: 1.70, nose: 0.98, lampY: 0.90 },
+  motorcycle: { length: 2.30, width: 0.90, height: 1.70, nose: 0.76, lampY: 0.90 },
 };
 
 /** Where the motorcycle's rider sits: behind the middle, and lower than in a car. */
@@ -121,12 +121,16 @@ function motorcycleGeometry(): THREE.BufferGeometry {
   for (const z of [-.07, .07]) parts.push(cylinder(.018, .10, -.42, .73, z, CHROME));
   // Footboards either side.
   for (const side of [-1, 1]) parts.push(box(.30, .025, .10, .02, .26, side * .19, BLACK, false, .006));
-  // Sprung front fork, handlebars and headlamp.
-  for (const side of [-1, 1]) parts.push(tiltedBox(.04, .66, .04, .66, .64, side * .075, .32, CHROME));
-  parts.push(cylinder(.016, .66, .52, 1.02, 0, CHROME, 'z'));
-  for (const side of [-1, 1]) parts.push(cylinder(.024, .11, .52, 1.02, side * .30, BLACK, 'z'));
-  parts.push(cylinder(.085, .12, .86, .90, 0, CHROME, 'x'));
-  parts.push(cylinder(.07, .02, .925, .90, 0, 0xe3d4a7, 'x'));
+  // Sprung front fork, raked from the front axle (.764, .327) up to the bars (.533, 1.02).
+  for (const side of [-1, 1]) parts.push(tiltedBox(.04, .734, .04, .6485, .675, side * .075, .32, CHROME));
+  // Top yoke joining the fork legs, with the handlebars clamped on it.
+  parts.push(box(.07, .04, .20, .536, 1.0, 0, BLACK, false, .01));
+  parts.push(cylinder(.016, .66, .533, 1.03, 0, CHROME, 'z'));
+  for (const side of [-1, 1]) parts.push(cylinder(.024, .11, .533, 1.03, side * .30, BLACK, 'z'));
+  // Headlamp on a bracket just ahead of the fork.
+  parts.push(box(.08, .03, .17, .61, .90, 0, BLACK, false, .008));
+  parts.push(cylinder(.085, .12, .67, .90, 0, CHROME, 'x'));
+  parts.push(cylinder(.07, .02, .735, .90, 0, 0xe3d4a7, 'x'));
   // A small tail lamp on the rear mudguard.
   parts.push(box(.05, .05, .07, -1.10, .62, 0, 0x7a1f1a, false, .01));
   return merge(parts);
