@@ -339,17 +339,17 @@ function PoolSheet({ teamId }: { teamId?: ID }) {
 }
 
 /** How many are in the gang's cache and with the selected lieutenant, large enough to read at a glance.
- * Clicking a count moves one over to that side. */
+ * Clicking a count moves one away from that side, over to the other. */
 function StockCounts({ cache, crew, cost, toCache, toCrew, buy }:
   { cache: number; crew: number; cost: number; toCache: () => void; toCrew: () => void; buy: () => void }) {
   return (
     <div className="stock-counts">
-      <button type="button" className="stock" onClick={toCrew}
-        title={cache ? 'Click to move one from the cache to the lieutenant' : 'None in the cache to hand over'}>
-        <span className="label">Lieutenant</span><b>{crew}</b>
-      </button>
       <button type="button" className="stock" onClick={toCache}
         title={crew ? 'Click to move one from the lieutenant to the cache' : 'The lieutenant has none to send back'}>
+        <span className="label">Lieutenant</span><b>{crew}</b>
+      </button>
+      <button type="button" className="stock" onClick={toCrew}
+        title={cache ? 'Click to move one from the cache to the lieutenant' : 'None in the cache to hand over'}>
         <span className="label">Cache</span><b>{cache}</b>
       </button>
       <button type="button" className="stock buy" onClick={buy} title="Buy one for the lieutenant">
