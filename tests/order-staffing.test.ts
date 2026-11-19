@@ -101,12 +101,30 @@ describe('requested manpower and actual dispatch', () => {
     expect(order.state).toBe('travelling'); expect(order.assignedIds).toHaveLength(2);
   });
 
-  it('fails an accepted job explicitly if the required party can no longer exist', () => {
+  it.each(['dead', 'arrested', 'beaten'] satisfies PersonStatus[])('goes ahead short-handed when a man is %s before the job starts', status => {
     const s = fixture();
     const order = queue(s, { type: 'explore', buildingIds: [s.hq.id], opts: { manpower: 2 } });
-    s.w.people[s.t.memberIds[0]].status = 'dead'; s.sim.launchWeek();
-    expect(order.state).toBe('failed'); expect(order.assignedIds).toEqual([]);
-    expect(order.failReason).toMatch(/2 people.*only 1 remain/);
+    s.w.people[s.t.memberIds[0]].status = status; s.sim.launchWeek();
+    expect(order.state).toBe('travelling'); expect(order.assignedIds).toEqual([s.t.lieutenantId]);
+    expect(order.results.filter(r => r.includes('going ahead with 1 of 2'))).toHaveLength(1);
+    expect(s.w.messages.filter(m => m.text.includes('going ahead with 1 of 2'))).toHaveLength(1);
+  });
+
+  it('still waits for a man who is only busy on an earlier job', () => {
+    const s = fixture(), charity = Object.values(s.w.buildings).find(b => b.cls === 'charity')!;
+    const first = queue(s, { type: 'donate', buildingIds: [charity.id], opts: { manpower: 1, amount: 1000 } });
+    const second = queue(s, { type: 'explore', buildingIds: [s.hq.id], opts: { manpower: 2 } });
+    s.sim.launchWeek();
+    expect(first.assignedIds).toHaveLength(1);
+    expect(second.state).toBe('queued'); expect(second.dispatchWaitReason).toMatch(/2 people; 1 is free/);
+  });
+
+  it('holds the job while the whole crew is out of action', () => {
+    const s = fixture();
+    const order = queue(s, { type: 'explore', buildingIds: [s.hq.id], opts: { manpower: 2 } });
+    for (const id of [s.t.lieutenantId, ...s.t.memberIds]) s.w.people[id].status = 'arrested';
+    s.sim.launchWeek();
+    expect(order.state).toBe('queued'); expect(order.assignedIds).toEqual([]);
   });
 
   it('continues an underway job with its survivors, slower and with one honest report', () => {

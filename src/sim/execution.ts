@@ -463,11 +463,13 @@ function assignOrder(w: WorldState, team: Team, order: Order, atWeekStart = fals
     if(!team.vehicles.truck){finishOrder(w,order,'Export needs a truck allocated to this crew.');return false;}
     if(!availableVehicle(w,team,'truck'))return waitForDispatch(w, order, 'Waiting for an available truck.');
   }
-  const { chosen, reason, impossible } = orderStaffing(w, team, order);
+  const { chosen, reason, impossible, requested } = orderStaffing(w, team, order);
   if (reason) {
     if (impossible) { finishOrder(w, order, reason); return false; }
     return waitForDispatch(w, order, reason);
   }
+  const shortHanded = chosen.length < requested
+    ? `${ORDERS[order.type].name}: going ahead with ${chosen.length} of ${requested} people; the others are out of action.` : null;
 
   order.assignedIds = chosen.map((p) => p.id);
   delete order.dispatchWaitReason;
@@ -493,6 +495,10 @@ function assignOrder(w: WorldState, team: Team, order: Order, atWeekStart = fals
   order.cursor = 0;
   order.completedTargets = 0;
   order.results = [];
+  if (shortHanded) {
+    order.results.push(shortHanded);
+    report(w, order.gangId, 'waiting', shortHanded, chosen[0].pos, chosen[0].id);
+  }
   delete order.refusals;
   delete order.links;
   order.failReason = null;

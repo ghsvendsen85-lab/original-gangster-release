@@ -35,11 +35,18 @@ export function freeForDispatch(w: WorldState, p: Person): boolean {
 export function orderStaffing(w: WorldState, team: Team, order: Pick<Order, 'type' | 'opts'>, planning = false) {
   const members = crewPeople(w, team).filter(p => p.status !== 'dead');
   const available = members.filter(p => readyForPlanning(w, p) && (planning || freeForDispatch(w, p)));
-  const want = Math.max(1, order.opts.manpower);
+  const requested = Math.max(1, order.opts.manpower);
+  // When the job is due, a crew that has lost men (dead, arrested, beaten,
+  // running a business) goes ahead with those it has left rather than giving
+  // up. It still waits for men who are only busy finishing an earlier job.
+  const ready = members.filter(p => readyForPlanning(w, p)).length;
+  const want = planning ? requested : Math.max(1, Math.min(requested, ready));
   const preferred = order.opts.preferredHoodId == null ? null : members.find(p => p.id === order.opts.preferredHoodId);
   let reason: string | null = null, impossible = false;
   if (order.opts.preferredHoodId != null && !preferred) {
     reason = 'The preferred person is no longer available in this crew.'; impossible = true;
+  } else if (!members.length) {
+    reason = 'Nobody remains in the crew to carry out the order.'; impossible = true;
   } else if (members.length < want) {
     reason = `This order needs ${want} people, but only ${members.length} remain in the crew.`; impossible = true;
   } else if (preferred && !available.includes(preferred)) {
@@ -70,5 +77,5 @@ export function orderStaffing(w: WorldState, team: Team, order: Pick<Order, 'typ
       Number(a.id === team.lieutenantId) - Number(b.id ===team.lieutenantId));
   while (chosen.length < want && candidates.length) chosen.push(candidates.shift()!);
   if (chosen.length < want && lt && !chosen.includes(lt)) chosen.push(lt);
-  return { chosen, available: available.length, reason, impossible };
+  return { chosen, available: available.length, reason, impossible, requested };
 }
