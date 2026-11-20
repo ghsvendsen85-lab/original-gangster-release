@@ -180,6 +180,27 @@ export function useGameKeyboard() {
         case 'F':
           cameraApi.ref?.flipView();
           break;
+        // The free 3D view: V switches it, Q/E turn it, R/T raise and lower it.
+        case 'v':
+        case 'V':
+          cameraApi.ref?.toggleFreeView();
+          break;
+        case 'q':
+        case 'Q':
+          if (!e.ctrlKey) cameraApi.ref?.rotateBy(Math.PI / 12);
+          break;
+        case 'e':
+        case 'E':
+          cameraApi.ref?.rotateBy(-Math.PI / 12);
+          break;
+        case 'r':
+        case 'R':
+          cameraApi.ref?.tiltBy(Math.PI / 36);
+          break;
+        case 't':
+        case 'T':
+          cameraApi.ref?.tiltBy(-Math.PI / 36);
+          break;
         case 'Escape':
           if (s.sheet) s.setSheet(null);
           else if (s.jobCard) cancelJobCard();
@@ -203,4 +224,52 @@ export function useGameKeyboard() {
     return () => window.removeEventListener('keydown', onKey);
   }, [setTab, setPaused, speedUp, speedDown, setPickMode, cancelJobCard, bump]);
 
+  // Held movement keys glide the camera: WASD in the working week (W opens the
+  // weapons sheet while planning), the arrow keys always. Physical key positions,
+  // so other keyboard layouts get the same cluster.
+  useEffect(() => {
+    const MOVES: Record<string, [number, number]> = {
+      KeyW: [0, 1], KeyS: [0, -1], KeyA: [1, 0], KeyD: [-1, 0],
+      ArrowUp: [0, 1], ArrowDown: [0, -1], ArrowLeft: [1, 0], ArrowRight: [-1, 0],
+    };
+    /** Screen heights per second. */
+    const SPEED = 0.9;
+    const held = new Set<string>();
+    let frame = 0, last = 0;
+    const tick = (now: number) => {
+      const city = cameraApi.ref;
+      if (!held.size) { frame = 0; return; }
+      const dt = Math.min(.1, (now - last) / 1000); last = now;
+      let x = 0, y = 0;
+      for (const code of held) { x += MOVES[code][0]; y += MOVES[code][1]; }
+      const len = Math.hypot(x, y);
+      // panBy takes a drag in pixels; it scales by the view height itself.
+      if (city && len) { const px = SPEED * window.innerHeight * dt / len; city.panBy(x * px, y * px); }
+      frame = requestAnimationFrame(tick);
+    };
+    const onDown = (e: KeyboardEvent) => {
+      if (!(e.code in MOVES) || e.ctrlKey || e.altKey || e.metaKey) return;
+      if (e.defaultPrevented || document.querySelector('[aria-modal="true"]')) return;
+      const target = e.target instanceof Element ? e.target : null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.closest('[role=tablist], [role=listbox], [role=slider]'))) return;
+      const s = useGame.getState(), world = s.sim?.world;
+      // The menu's demonstration city: the arrow keys belong to the menu.
+      if (!world || !cameraApi.ref || s.attract) return;
+      if (e.code.startsWith('Key') && world.phase === 'planning') return;
+      e.preventDefault();
+      held.add(e.code);
+      if (!frame) { last = performance.now(); frame = requestAnimationFrame(tick); }
+    };
+    const onUp = (e: KeyboardEvent) => { held.delete(e.code); };
+    const release = () => held.clear();
+    window.addEventListener('keydown', onDown);
+    window.addEventListener('keyup', onUp);
+    window.addEventListener('blur', release);
+    return () => {
+      window.removeEventListener('keydown', onDown);
+      window.removeEventListener('keyup', onUp);
+      window.removeEventListener('blur', release);
+      cancelAnimationFrame(frame);
+    };
+  }, []);
 }

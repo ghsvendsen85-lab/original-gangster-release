@@ -64,6 +64,8 @@ export function OptionsTab() {
   const mouseReversal = useGame((s) => s.mouseReversal);
   const textureQuality = useGame((s) => s.textureQuality);
   const setRoadNames = useGame((s) => s.setRoadNames);
+  const ambientOcclusion = useGame((s) => s.ambientOcclusion);
+  const setAmbientOcclusion = useGame((s) => s.setAmbientOcclusion);
   const setAutoLowerRoofs = useGame((s) => s.setAutoLowerRoofs);
   const startGame = useGame((s) => s.startGame);
   const [quit, setQuit] = useState<null | 'restart' | 'fresh' | 'menu'>(null);
@@ -183,6 +185,12 @@ export function OptionsTab() {
         </button>
         <div className="muted tiny" style={{ marginTop: 6 }}>
           The original names the street at the top of the view; painted names are an addition.
+        </div>
+        <button aria-pressed={ambientOcclusion} className={`btn sm${ambientOcclusion ? ' on' : ''}`} style={{ marginTop: 8 }} onClick={() => setAmbientOcclusion(!ambientOcclusion)}>
+          {ambientOcclusion ? 'Ambient occlusion on (3D view)' : 'Ambient occlusion off (3D view)'}
+        </button>
+        <div className="muted tiny" style={{ marginTop: 6 }}>
+          Soft shade in corners, doorways and at the foot of walls in the 3D view (V). Turn it off if the street view runs slowly.
         </div>
         <button aria-pressed={mouseReversal} className={`btn sm${mouseReversal ? ' on' : ''}`} style={{ marginTop: 8 }}
           onClick={() => useGame.getState().setMouseReversal(!mouseReversal)}>

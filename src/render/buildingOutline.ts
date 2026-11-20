@@ -21,6 +21,7 @@ export class BuildingOutline {
     depthTexture: new THREE.DepthTexture(1, 1, THREE.UnsignedIntType),
   });
   private maskCamera = new THREE.OrthographicCamera();
+  private maskPerspective = new THREE.PerspectiveCamera();
   private quadScene = new THREE.Scene();
   private quadCamera = new THREE.Camera();
   private quadGeometry = new THREE.PlaneGeometry(2, 2);
@@ -123,7 +124,7 @@ export class BuildingOutline {
     this.bounds.union(this.boxScratch.copy(mesh.geometry.boundingBox!).applyMatrix4(mesh.matrix));
   }
 
-  render(renderer: THREE.WebGLRenderer, camera: THREE.OrthographicCamera): void {
+  render(renderer: THREE.WebGLRenderer, camera: THREE.OrthographicCamera | THREE.PerspectiveCamera): void {
     if (!this.visible || !this.parts.length || this.disposed) return;
     for (const part of this.parts) {
       const visible = part.source?.visible ?? true;
@@ -145,13 +146,14 @@ export class BuildingOutline {
       if (this.maskDirty) {
         if (this.target.width !== region.width || this.target.height !== region.height)
           this.target.setSize(region.width, region.height);
-        this.maskCamera.copy(camera);
-        this.maskCamera.setViewOffset(this.size.x, this.size.y, region.x, region.y, region.width, region.height);
+        const maskCamera = camera instanceof THREE.PerspectiveCamera
+          ? this.maskPerspective.copy(camera) : this.maskCamera.copy(camera);
+        maskCamera.setViewOffset(this.size.x, this.size.y, region.x, region.y, region.width, region.height);
         renderer.setRenderTarget(this.target);
         renderer.setScissorTest(false);
         renderer.setClearColor(0x000000, 0);
         renderer.autoClear = true;
-        renderer.render(this.shape, this.maskCamera);
+        renderer.render(this.shape, maskCamera);
         this.previousCamera.copy(camera.matrixWorld); this.previousProjection.copy(camera.projectionMatrix);
         this.previousViewport.copy(this.size); this.maskDirty = false;
       }
@@ -160,8 +162,9 @@ export class BuildingOutline {
       renderer.autoClear = false;
       const basis = camera.matrixWorld.elements;
       const groundSlope = Math.hypot(basis[8], basis[10]) / Math.max(.01, Math.abs(basis[9]));
-      this.material.uniforms.depthSlope.value = region.height * 2 / camera.projectionMatrix.elements[5] /
-        this.size.y * groundSlope / (camera.far - camera.near);
+      // Perspective depth is not linear across the screen: no extrapolation there.
+      this.material.uniforms.depthSlope.value = camera instanceof THREE.PerspectiveCamera ? 0
+        : region.height * 2 / camera.projectionMatrix.elements[5] / this.size.y * groundSlope / (camera.far - camera.near);
       this.material.uniforms.stepUv.value.set(renderer.getPixelRatio() / region.width, renderer.getPixelRatio() / region.height);
       this.material.uniforms.rect.value.set(region.x / this.size.x, 1 - (region.y + region.height) / this.size.y,
         region.width / this.size.x, region.height / this.size.y);
@@ -175,7 +178,7 @@ export class BuildingOutline {
     }
   }
 
-  private updateRegion(camera: THREE.OrthographicCamera, pixelRatio: number): void {
+  private updateRegion(camera: THREE.Camera, pixelRatio: number): void {
     let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
     for (let i = 0; i < 8; i++) {
       this.point.set(i & 1 ? this.bounds.max.x : this.bounds.min.x,

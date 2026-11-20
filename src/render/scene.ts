@@ -99,6 +99,8 @@ import {
   smoothstep,
 } from './util';
 import { peopleList, buildingList } from '../sim/entityLists';
+import { NaturalLight, naturalSunDirection } from './naturalLight';
+import { LAMP_POOL_SIZE, StreetLights, WINDOW_SPILL_DEPTH, lampPoolGeometry, lampPoolMaterial, windowSpillGeometry, windowSpillMaterial } from './streetLights';
 
 export type OverlayKind =
   | 'territory'
@@ -125,6 +127,14 @@ const PX_PER_METRE = 2;
 const MAX_AGENTS = 3600;
 /** Original street imagery uses 2:1 ground diagonals: sin(elevation) = 1/2. */
 const CAMERA_ELEVATION = Math.PI / 6;
+/** Free 3D view: vertical field of view in degrees, and the tilt limits. */
+const FREE_FOV = 45;
+const FREE_PITCH_MIN = THREE.MathUtils.degToRad(12);
+const FREE_PITCH_MAX = THREE.MathUtils.degToRad(88);
+const FREE_PITCH_DEFAULT = THREE.MathUtils.degToRad(38);
+/** How far past the target the free view looks for people, cars and sound. */
+const FREE_MAX_REACH = 700;
+const FREE_VIEW_KEY = 'og.freeView';
 /** Half-width of a block's pavement slab. */
 const SLAB_HALF = BLOCK_SIZE / 2 + PAVE_W;
 /** Keep tyre soles just clear of the road, in metres. */
@@ -213,7 +223,14 @@ async function restoreReleasedContext(canvas: HTMLCanvasElement): Promise<void> 
 
 export class CityRenderer {
   readonly scene = new THREE.Scene();
-  readonly camera: THREE.OrthographicCamera;
+  /** The original's fixed isometric view. */
+  readonly isoCamera: THREE.OrthographicCamera;
+  /** The free 3D view: a perspective camera that orbits and tilts about the target. */
+  readonly freeCamera = new THREE.PerspectiveCamera(FREE_FOV, 1, .5, 6000);
+  /** Whichever camera the main view is drawn and picked with. */
+  get camera(): THREE.OrthographicCamera | THREE.PerspectiveCamera {
+    return this.freeView ? this.freeCamera : this.isoCamera;
+  }
   private renderer: THREE.WebGLRenderer;
   private world: WorldState;
   private tex: CityTextures;
@@ -322,6 +339,21 @@ export class CityRenderer {
   private pavement!: InstancePool;
   private lamps!: InstancePool;
   private lampGlow!: InstancePool;
+  /** Pools of lamplight on the ground, and the point lights in the nearest lamps. */
+  private lampPools!: InstancePool;
+  private lampPoolMat!: THREE.ShaderMaterial;
+  private streetLights!: StreetLights;
+  private lampPoolMatrix = new THREE.Matrix4();
+  private lampPoolAt = new THREE.Vector3();
+  private lampPoolScale = new THREE.Vector3(LAMP_POOL_SIZE, 1, LAMP_POOL_SIZE);
+  private identityQuat = new THREE.Quaternion();
+  /** Light from lit windows on the pavement round each building. */
+  private windowSpill: InstancePool | null = null;
+  private windowSpillMat: THREE.ShaderMaterial | null = null;
+  private spillMatrix = new THREE.Matrix4();
+  private spillAt = new THREE.Vector3();
+  private spillQuat = new THREE.Quaternion();
+  private spillScale = new THREE.Vector3();
   private hydrants!: InstancePool;
   private trees!: InstancePool;
   private treeModels?: SculptTrees;
@@ -394,6 +426,16 @@ export class CityRenderer {
   private taggedPreview: PreviewActorMotion = { x: 0, y: 0, facing: 0, moving: false };
   /** Looking at the city from the opposite corner, to see the far side of the blocks. */
   private flipped = false;
+  /** The free 3D view (perspective, any angle) instead of the isometric one. */
+  private freeView = false;
+  /** Free view: the camera's bearing around the target (radians, from +x toward +z) and its height angle. */
+  private yaw = Math.PI / 4;
+  private pitch = FREE_PITCH_DEFAULT;
+  private dirScratch = new THREE.Vector3();
+  private sunDirScratch = new THREE.Vector3();
+  /** Sky, world-fixed sun, image light and ambient occlusion for the free view. */
+  private nature: NaturalLight | null = null;
+  private ambientOcclusion = true;
   private width = 1;
   private height = 1;
 
@@ -433,7 +475,7 @@ export class CityRenderer {
   private cutawayPerson: ID | null = null;
   private cutawayBuilding: ID | null = null;
   private cutawayCamera = new THREE.Vector3(Infinity, Infinity, Infinity);
-  private cutawayFlipped = false;
+  private cutawayView = new THREE.Vector3();
   private cutawayRevision = -2;
   private cutawayRadius = -1;
 
@@ -471,7 +513,8 @@ export class CityRenderer {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.32;
 
-    this.camera = new THREE.OrthographicCamera(-100, 100, 100, -100, -2000, 4000);
+    this.isoCamera = new THREE.OrthographicCamera(-100, 100, 100, -100, -2000, 4000);
+    try { this.freeView = localStorage.getItem(FREE_VIEW_KEY) === '1'; } catch { /* storage unavailable */ }
     const cityW = world.gridW * CELL;
     const cityH = world.gridH * CELL;
     this.target.set(cityW / 2, 0, cityH / 2);
@@ -639,6 +682,9 @@ export class CityRenderer {
     this.bounce = new THREE.DirectionalLight(0x8fa8c8, 0.35 * fillScale);
     this.bounce.position.set(720, 120, 560);
     this.scene.add(this.bounce);
+
+    this.nature = new NaturalLight(this.renderer, this.scene);
+    this.nature.setSize(this.width, this.height, this.renderer.getPixelRatio());
   }
 
   private buildGround(): void {
@@ -916,6 +962,20 @@ export class CityRenderer {
     const ironMat = new THREE.MeshStandardMaterial({ roughness: 0.65, metalness: 0.3, vertexColors: true });
     this.lamps = new InstancePool(lampPostGeometry(), ironMat, nBlocks * 4, { castShadow: true });
     this.lampGlow = new InstancePool(lampGlowGeometry(), this.glowMat, nBlocks * 4, {});
+    // The light the lamps throw (src/render/streetLights.ts).
+    this.lampPoolMat = lampPoolMaterial();
+    this.lampPools = new InstancePool(lampPoolGeometry(), this.lampPoolMat, nBlocks * 4, {});
+    this.lampPools.mesh.renderOrder = 1;
+    this.lampPools.mesh.visible = false;
+    this.scene.add(this.lampPools.mesh);
+    this.streetLights = new StreetLights();
+    this.scene.add(this.streetLights.group);
+    this.windowSpillMat = windowSpillMaterial();
+    // Four strips round each ground-storey mass; a lot rarely has more than three.
+    this.windowSpill = new InstancePool(windowSpillGeometry(), this.windowSpillMat, Math.max(64, buildingList(this.world).length * 16), { color: true });
+    this.windowSpill.mesh.renderOrder = 1;
+    this.windowSpill.mesh.visible = false;
+    this.scene.add(this.windowSpill.mesh);
     const propMat = new THREE.MeshStandardMaterial({ roughness: 0.85, vertexColors: true });
     this.hydrants = new InstancePool(hydrantGeometry(), propMat, nBlocks * 2, { castShadow: true });
     this.trees = new InstancePool(treeGeometry(), propMat, nBlocks * 3, { castShadow: true });
@@ -1362,6 +1422,8 @@ export class CityRenderer {
 
     for (const p of [...this.wallPools, ...this.cutawayWalls]) p.reset();
     for (const p of this.decor) p.reset();
+    // Window light on the pavement belongs to the main view only.
+    if (!this.makingBuildingView) this.windowSpill?.reset();
     if (!this.makingBuildingView) this.roomCache = [];
     this.footprints.clear();
     // The inset can temporarily rebuild different roofs; only the main view
@@ -1376,6 +1438,7 @@ export class CityRenderer {
 
     if (this.buildingsRemoved) {
       for (const p of [...this.wallPools, ...this.cutawayWalls, ...this.decor]) p.commit();
+      if (!this.makingBuildingView) this.windowSpill?.commit();
       if (!this.makingBuildingView) this.furnishNear(true);
       this.picks.mesh.boundingSphere = null;
       this.picks.mesh.boundingBox = null;
@@ -1461,6 +1524,25 @@ export class CityRenderer {
       // rather than hang in the air above it.
       const frontCut = groundCutaway || (lowered && masses.length > 0 && masses[0].floorY === 0);
       if(fireStage)this.fireDamageDecor.add(masses,px,pz,yaw,fireStage,lowered);
+      // Lit windows throw light on the pavement round the ground storey.
+      // Walls against a neighbour are covered by it, so every side is laid.
+      if (this.windowSpill && !this.makingBuildingView && !fireStage && !prof.ruin && b.state !== 'destroyed' && b.state !== 'ceased' && b.state !== 'damaged') {
+        const gain = .55 + r01(b.id, 61) * .65;
+        for (const m of intactMasses) {
+          if (m.y > .5) continue;
+          const [mx, mz] = local(m.dx, m.dz);
+          for (let side = 0; side < 4; side++) {
+            const across = side & 1 ? m.w : m.d, along = side & 1 ? m.d : m.w;
+            const turn = yaw + side * Math.PI / 2;
+            // Local +z of the strip points away from this wall.
+            const ox = Math.sin(turn) * across / 2, oz = Math.cos(turn) * across / 2;
+            this.spillQuat.setFromAxisAngle(THREE.Object3D.DEFAULT_UP, turn);
+            this.spillMatrix.compose(this.spillAt.set(mx + ox, KERB_H + .03, mz + oz), this.spillQuat, this.spillScale.set(along, 1, WINDOW_SPILL_DEPTH));
+            this.tintScratch.setRGB(gain, gain, gain);
+            this.windowSpill.push(this.spillMatrix, this.tintScratch);
+          }
+        }
+      }
       const placed: PlacedMass[] = [];
       for (let mi = 0; mi < masses.length; mi++) {
         const m = masses[mi];
@@ -1810,6 +1892,7 @@ export class CityRenderer {
 
     for (const p of [...this.wallPools, ...this.cutawayWalls]) p.commit();
     for (const p of this.decor) p.commit();
+    if (!this.makingBuildingView) this.windowSpill?.commit();
     if (!this.makingBuildingView) this.furnishNear(true);
     this.rubbleModels?.setPlacements(rubblePlacements);
     // InstancedMesh caches these on its first raycast. Roof-mode and world
@@ -1837,6 +1920,15 @@ export class CityRenderer {
     this.pavement.reset();
     this.lamps.reset();
     this.lampGlow.reset();
+    this.lampPools.reset();
+    const lampPositions: THREE.Vector3[] = [];
+    // Every lamp also throws a pool of light and may carry a point light.
+    const lampLight = () => {
+      const p = this.dummy.position;
+      lampPositions.push(new THREE.Vector3(p.x, p.y, p.z));
+      this.lampPoolMatrix.compose(this.lampPoolAt.set(p.x, p.y + .03, p.z), this.identityQuat, this.lampPoolScale);
+      this.lampPools.push(this.lampPoolMatrix);
+    };
     this.hydrants.reset();
     this.trees.reset();
 
@@ -1883,7 +1975,7 @@ export class CityRenderer {
             this.dummy.rotation.set(0, (k * Math.PI) / 2, 0);
             this.dummy.updateMatrix();
             this.lamps.push(this.dummy.matrix);
-            this.lampGlow.push(this.dummy.matrix);
+            this.lampGlow.push(this.dummy.matrix); lampLight();
           }
         }
         this.dummy.scale.set(1, 1, 1);
@@ -1909,7 +2001,7 @@ export class CityRenderer {
         this.dummy.rotation.set(0, (k * Math.PI) / 2, 0);
         this.dummy.updateMatrix();
         this.lamps.push(this.dummy.matrix);
-        this.lampGlow.push(this.dummy.matrix);
+        this.lampGlow.push(this.dummy.matrix); lampLight();
       }
 
       // A hydrant, and trees on the leafier blocks.
@@ -1945,8 +2037,10 @@ export class CityRenderer {
     this.pavement.commit();
     this.lamps.commit();
     this.lampGlow.commit();
+    this.lampPools.commit();
+    this.streetLights.setLamps(lampPositions);
     this.hydrants.commit();
-    this.streetFurniture = [this.lamps, this.lampGlow, this.hydrants].map(pool => snapshotPlacements(pool));
+    this.streetFurniture = [this.lamps, this.lampGlow, this.lampPools, this.hydrants].map(pool => snapshotPlacements(pool));
     this.furnitureAt.set(Infinity, 0, Infinity);
     this.cullStreetFurniture();
     this.trees.commit();
@@ -2042,7 +2136,7 @@ export class CityRenderer {
     if (watchedIds.size) people.sort((a,b) => Number(watchedIds.has(b.id)) - Number(watchedIds.has(a.id)));
     const hdIds = new Set<number>(), visibleIds = new Set<number>();
     this.camera.updateMatrixWorld(true);
-    const bodyPixels = characterPixelHeight(this.camera, this.height);
+    const bodyPixels = characterPixelHeight(this.camera, this.height, this.camera.position.distanceTo(this.target));
     this.characterDetailStats = { bodyPixels, inView: 0, eligible: 0, detailed: 0, simplified: 0 };
     if (this.sculptModelsActive) {
       const lastDetailed = this.lastDetailedIds;
@@ -2477,7 +2571,7 @@ export class CityRenderer {
   }
 
   setTaggedViews(rects: TaggedViewRect[]): void {
-    this.tagged.set(rects, this.flipped);
+    this.tagged.set(rects, this.isFlipped());
   }
 
   private cullStreetFurniture(): void {
@@ -2583,6 +2677,7 @@ export class CityRenderer {
     const ratio = Math.min(window.devicePixelRatio, 2);
     if (ratio !== this.renderer.getPixelRatio()) this.renderer.setPixelRatio(ratio);
     this.renderer.setSize(this.width, this.height, false);
+    this.nature?.setSize(this.width, this.height, this.renderer.getPixelRatio());
     this.clampTarget();
     this.updateCamera();
   }
@@ -2649,12 +2744,74 @@ export class CityRenderer {
 
   /** The original's Flip Screen: the view from the opposite corner, left and right reversed. */
   flipView(): void {
-    this.flipped = !this.flipped;
+    if (this.freeView) this.yaw += Math.PI;
+    else this.flipped = !this.flipped;
     this.updateCamera();
   }
 
+  /** Looking from the far (-x, -z) side of the city. */
   isFlipped(): boolean {
-    return this.flipped;
+    return this.freeView ? Math.cos(this.yaw) + Math.sin(this.yaw) < 0 : this.flipped;
+  }
+
+  isFreeView(): boolean {
+    return this.freeView;
+  }
+
+  /** Switch between the isometric view and the free 3D view, keeping the bearing. */
+  setFreeView(on: boolean): void {
+    if (on === this.freeView) return;
+    if (on) {
+      this.yaw = this.viewAzimuth();
+      this.pitch = FREE_PITCH_DEFAULT;
+    } else {
+      this.flipped = this.isFlipped();
+    }
+    this.freeView = on;
+    try { localStorage.setItem(FREE_VIEW_KEY, on ? '1' : '0'); } catch { /* storage unavailable */ }
+    this.clampTarget();
+    this.updateCamera();
+  }
+
+  toggleFreeView(): void {
+    this.setFreeView(!this.freeView);
+  }
+
+  /** Turn the free view about the target (radians); turns the free view on. */
+  rotateBy(radians: number): void {
+    if (!this.freeView) this.setFreeView(true);
+    this.yaw = (this.yaw + radians) % (Math.PI * 2);
+    this.updateCamera();
+  }
+
+  /** Raise (positive) or lower the free view's angle (radians); turns the free view on. */
+  tiltBy(radians: number): void {
+    if (!this.freeView) this.setFreeView(true);
+    this.pitch = clamp(this.pitch + radians, FREE_PITCH_MIN, FREE_PITCH_MAX);
+    this.updateCamera();
+  }
+
+  /** A mouse drag in the free view: across turns, up and down tilts. */
+  orbitBy(dxPixels: number, dyPixels: number): void {
+    if (!this.freeView) return;
+    this.yaw = (this.yaw + dxPixels * 0.006) % (Math.PI * 2);
+    this.pitch = clamp(this.pitch + dyPixels * 0.004, FREE_PITCH_MIN, FREE_PITCH_MAX);
+    this.updateCamera();
+  }
+
+  /** The camera's bearing around the target: radians from +x toward +z. */
+  private viewAzimuth(): number {
+    return this.freeView ? this.yaw : this.flipped ? Math.PI * 5 / 4 : Math.PI / 4;
+  }
+
+  private viewElevation(): number {
+    return this.freeView ? this.pitch : CAMERA_ELEVATION;
+  }
+
+  /** Unit vector from the target toward the camera. */
+  private viewDirection(out: THREE.Vector3): THREE.Vector3 {
+    const a = this.viewAzimuth(), e = this.viewElevation();
+    return out.set(Math.cos(e) * Math.cos(a), Math.sin(e), Math.cos(e) * Math.sin(a));
   }
 
   zoomBy(factor: number): void {
@@ -2663,12 +2820,12 @@ export class CityRenderer {
 
   panBy(dxPixels: number, dyPixels: number): void {
     const scale = (240 / this.zoom) / this.height;
-    // Screen right/down mapped into the isometric ground plane.
-    const side = this.flipped ? -1 : 1;
-    const right = new THREE.Vector3(side, 0, -side).normalize();
-    const fwd = new THREE.Vector3(side, 0, side).normalize();
+    // Screen right/down mapped into the ground plane for the current bearing.
+    const a = this.viewAzimuth();
+    const right = new THREE.Vector3(Math.sin(a), 0, -Math.cos(a));
+    const fwd = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
     this.target.addScaledVector(right, -dxPixels * scale);
-    this.target.addScaledVector(fwd, -dyPixels * scale / Math.sin(CAMERA_ELEVATION));
+    this.target.addScaledVector(fwd, -dyPixels * scale / Math.sin(this.viewElevation()));
     this.clampTarget();
     this.updateCamera();
   }
@@ -2691,6 +2848,19 @@ export class CityRenderer {
    * onto the ground plane.
    */
   private groundReach(): number {
+    // Perspective: where the frame's corners meet the ground, out to a limit
+    // (rays at or above the horizon reach the limit).
+    if (this.freeView) {
+      const cam = this.freeCamera, v = this.dirScratch;
+      let reach = 0;
+      for (const [x, y] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        v.set(x, y, .5).unproject(cam).sub(cam.position);
+        if (v.y > -1e-4) return FREE_MAX_REACH;
+        const t = -cam.position.y / v.y;
+        reach = Math.max(reach, Math.hypot(cam.position.x + v.x * t - this.target.x, cam.position.z + v.z * t - this.target.z));
+      }
+      return Math.min(reach, FREE_MAX_REACH);
+    }
     const viewH = 240 / this.zoom;
     const viewW = viewH * (this.width / this.height);
     return viewH * Math.SQRT1_2 / (2 * Math.sin(CAMERA_ELEVATION)) + viewW * Math.SQRT1_2 / 2;
@@ -2699,6 +2869,12 @@ export class CityRenderer {
   private clampTarget(): void {
     const cityW = this.world.gridW * CELL;
     const cityH = this.world.gridH * CELL;
+    if (this.freeView) {
+      // The perspective frame always shows ground around the target: keep it on the map.
+      this.target.x = clamp(this.target.x, 0, cityW);
+      this.target.z = clamp(this.target.z, 0, cityH);
+      return;
+    }
     const reach = this.groundReach();
     // Keep the city filling the frame; once the frame is wider than the city
     // the only sensible target is its middle, which is what these agree on.
@@ -2712,21 +2888,35 @@ export class CityRenderer {
     const aspect = this.width / this.height;
     const viewH = 240 / this.zoom;
     const viewW = viewH * aspect;
-    this.camera.left = -viewW / 2;
-    this.camera.right = viewW / 2;
-    this.camera.top = viewH / 2;
-    this.camera.bottom = -viewH / 2;
+    const dir = this.viewDirection(new THREE.Vector3());
+    // In the free view, the distance at which the perspective frame is as tall
+    // at the target as the isometric one: the zoom levels keep their meaning.
+    const freeDist = viewH / (2 * Math.tan(THREE.MathUtils.degToRad(FREE_FOV / 2)));
+    if (this.freeView) {
+      const cam = this.freeCamera;
+      cam.aspect = aspect;
+      cam.near = Math.max(.1, freeDist * .02);
+      cam.far = freeDist + 4000;
+      cam.position.copy(this.target).addScaledVector(dir, freeDist);
+      cam.lookAt(this.target);
+      cam.updateProjectionMatrix();
+      cam.updateMatrixWorld();
+    } else {
+      const cam = this.isoCamera;
+      cam.left = -viewW / 2;
+      cam.right = viewW / 2;
+      cam.top = viewH / 2;
+      cam.bottom = -viewH / 2;
+      cam.position.copy(this.target).addScaledVector(dir, 900);
+      cam.lookAt(this.target);
+      cam.updateProjectionMatrix();
+    }
 
-    const dist = 900;
-    const side = this.flipped ? -1 : 1;
-    const dir = new THREE.Vector3(side, Math.SQRT2 * Math.tan(CAMERA_ELEVATION), side).normalize();
-    this.camera.position.copy(this.target).addScaledVector(dir, dist);
-    this.camera.lookAt(this.target);
-    this.camera.updateProjectionMatrix();
-
-    // Fill both visible wall directions, including Flip Screen. The light's
-    // upward component stays fixed for horizontal roof/floor diffuse lighting.
-    this.bounce.position.set(side * 720, 120, side * 560);
+    // Fill both visible wall directions, including Flip Screen and any free
+    // bearing. The light's upward component stays fixed for horizontal
+    // roof/floor diffuse lighting.
+    const bounceAngle = this.viewAzimuth() + Math.atan2(560, 720) - Math.PI / 4, bounceR = Math.hypot(720, 560);
+    this.bounce.position.set(Math.cos(bounceAngle) * bounceR, 120, Math.sin(bounceAngle) * bounceR);
 
     // Retain broad coverage for off-screen buildings at city zoom. Concentrate
     // the map only at street zoom so filtering preserves shoe/tyre contact.
@@ -2759,8 +2949,14 @@ export class CityRenderer {
 
     if (this.scene.fog) {
       const fog = this.scene.fog as THREE.Fog;
-      fog.near = 700 + viewH * 1.4;
-      fog.far = 1700 + viewH * 5.5;
+      if (this.freeView) {
+        // Measured from the camera: the target stays clear and the horizon fades.
+        fog.near = freeDist + 150 + viewH * 1.4;
+        fog.far = freeDist + 900 + viewH * 5.5;
+      } else {
+        fog.near = 700 + viewH * 1.4;
+        fog.far = 1700 + viewH * 5.5;
+      }
     }
   }
 
@@ -2781,9 +2977,9 @@ export class CityRenderer {
     // viewer's upper left whichever way the camera faces: the wall on the left
     // of the screen in full sun, the right one a little less, far faces in
     // shadow. Only its height follows the day.
-    const side = this.flipped ? -1 : 1;
+    const sunAngle = this.viewAzimuth() + Math.atan2(1, 0.35) - Math.PI / 4;
     const elev = 0.35 + noon * 0.95;
-    const across = new THREE.Vector2(side * 0.35, side * 1.0).normalize().multiplyScalar(280);
+    const across = new THREE.Vector2(Math.cos(sunAngle), Math.sin(sunAngle)).multiplyScalar(280);
     this.sun.position
       .copy(this.target)
       .add(new THREE.Vector3(across.x, elev * 300, across.y));
@@ -2813,6 +3009,27 @@ export class CityRenderer {
     (this.scene.background as THREE.Color).copy(sky);
     if (this.scene.fog) (this.scene.fog as THREE.Fog).color.copy(sky);
 
+    if (this.freeView && this.nature) {
+      // Natural light (src/render/naturalLight.ts): the sun keeps its place in
+      // the world and crosses it east to west; the sky dome and its image light
+      // take over most of the flat fill, which now comes from away from the sun.
+      const sunDir = naturalSunDirection(hour, this.sunDirScratch);
+      this.sun.position.copy(this.target).addScaledVector(sunDir, 320);
+      const fillAngle = Math.atan2(-sunDir.z, -sunDir.x), fillR = Math.hypot(720, 560);
+      this.bounce.position.set(Math.cos(fillAngle) * fillR, 120, Math.sin(fillAngle) * fillR);
+      this.bounce.intensity *= lerp(.5, .8, night);
+      // The image light is faint at night: keep more of the flat sky fill then.
+      this.hemi.intensity *= lerp(.45, 1, night);
+      const horizon = new THREE.Color().setRGB(
+        Math.min(1, sky.r * 1.12 + .03), Math.min(1, sky.g * 1.1 + .03), Math.min(1, sky.b * 1.05 + .02));
+      const zenith = new THREE.Color().setRGB(
+        lerp(0.015, 0.16, noon) + glow * 0.06, lerp(0.025, 0.32, noon) + glow * 0.02, lerp(0.07, 0.66, noon));
+      const ground = new THREE.Color().setRGB(.16, .15, .13).multiplyScalar(lerp(.2, 1, noon) * (1 - night * .6));
+      const sunColor = this.sun.color.clone().multiplyScalar((1 - night * .85) * (1 + glow));
+      if (this.scene.fog) (this.scene.fog as THREE.Fog).color.copy(horizon);
+      this.nature.update(this.freeCamera, { zenith, horizon, ground, sunDir, sunColor, night }, lerp(.25, .7, noon) * (1 - night * .6) + night * .35);
+    } else this.nature?.rest();
+
     // Windows come on as the afternoon light goes.
     const lightUp = smoothstep(0.68, 0.92, phase);
     for (const m of this.facadeMats) m.emissiveIntensity = lightUp * 1.1;
@@ -2820,6 +3037,14 @@ export class CityRenderer {
     this.glowMat.opacity = dusk * 0.95;
     this.headlampMat.opacity = dusk * 0.9;
     this.lampGlow.mesh.visible = dusk > 0.02;
+    // The lamps light the street as the evening comes on.
+    const lampLight = smoothstep(0.02, 0.9, dusk);
+    if (this.lampPoolMat) this.lampPoolMat.uniforms.strength.value = lampLight * .75;
+    if (this.lampPools) this.lampPools.mesh.visible = lampLight > 0.01 && this.zoom > 0.75;
+    this.streetLights?.update(this.target, lampLight);
+    // Window light on the pavement follows the windows themselves.
+    if (this.windowSpillMat) this.windowSpillMat.uniforms.strength.value = lightUp * .7;
+    if (this.windowSpill) this.windowSpill.mesh.visible = lightUp > 0.01 && this.zoom > 0.75;
 
     // A faint sheen on the roadway once the light goes flat.
     this.groundMat.roughness = 0.93 - dusk * 0.3;
@@ -2842,15 +3067,18 @@ export class CityRenderer {
       const radius = person?.inVehicle && profile ? Math.hypot(profile.length, profile.width) / 2 + .2 : .35 * CHARACTER_SCALE;
       const h = person?.inVehicle && profile ? profile.height / 2 : CHARACTER_SCALE;
       const point = pos ? new THREE.Vector3(pos.x, streetSurfaceHeight(this.world, pos.x, pos.y) + h, pos.y) : this.target;
+      const view = this.viewDirection(this.dirScratch);
       if (this.cutawayRadius === radius && this.cutawayPerson === (person?.id ?? null) &&
-          this.cutawayBuilding === this.selectedBuildingId && this.cutawayFlipped === this.flipped &&
+          this.cutawayBuilding === this.selectedBuildingId && this.cutawayView.distanceToSquared(view) < 1e-3 &&
           this.cutawayRevision === this.buildingSig && this.cutawayPoint.distanceToSquared(point) < .25 &&
           this.cutawayCamera.distanceToSquared(this.target) < .25) return;
       // Always test the intact variant, so already cut walls cannot oscillate.
       const restore = this.useTaggedBuildings(false);
       try {
-        const side = this.flipped ? -1 : 1;
-        const direction = new THREE.Vector3(side, Math.SQRT2 * Math.tan(CAMERA_ELEVATION), side).normalize();
+        // Toward the camera: parallel in the isometric view, converging on the eye in the free one.
+        const towardCamera = (from: THREE.Vector3) => this.freeView
+          ? new THREE.Vector3().subVectors(this.freeCamera.position, from).normalize()
+          : view.clone();
         const sight = (this.sightProxies ?? this.picks).mesh;
         sight.updateMatrixWorld(true);
         const focus = new THREE.Vector3(this.target.x, KERB_H + 1, this.target.z);
@@ -2862,8 +3090,8 @@ export class CityRenderer {
           localFocus.copy(focus).applyMatrix4(this.mat4.invert());
           if (geometry.boundingBox!.containsPoint(localFocus)) next.add(this.buildingIds[i]);
         }
-        const hits = actorSightlineHits(this.cutawayRay, focus, direction, 6, sight);
-        if (person) hits.push(...actorSightlineHits(this.cutawayRay, point, direction, radius, sight));
+        const hits = actorSightlineHits(this.cutawayRay, focus, towardCamera(focus), 6, sight);
+        if (person) hits.push(...actorSightlineHits(this.cutawayRay, point, towardCamera(point), radius, sight));
         for (const hit of hits) {
           if (hit.instanceId != null) {
             const id = this.buildingIds[hit.instanceId];
@@ -2879,7 +3107,7 @@ export class CityRenderer {
       this.cutawayRadius = radius;
       this.cutawayPoint.copy(point);
       this.cutawayCamera.copy(this.target);
-      this.cutawayFlipped = this.flipped;
+      this.cutawayView.copy(this.viewDirection(this.dirScratch));
       this.cutawayRevision = this.buildingSig;
     } else {
       this.cutawayPerson = null;
@@ -3029,9 +3257,24 @@ export class CityRenderer {
     this.cityEffects?.setLowered(this.hiddenRoofs);
     this.renderer.setViewport(0, 0, this.width, this.height);
     this.renderer.setScissorTest(false);
-    this.renderer.render(this.scene, this.camera);
-    this.buildingOutline.render(this.renderer, this.camera);
+    // The free view draws its sky dome, and with ambient occlusion on goes
+    // through the post-processing chain; tagged windows never see the dome.
+    const nature = this.freeView ? this.nature : null;
+    if (nature) nature.sky.visible = true;
+    try {
+      if (nature && this.ambientOcclusion) {
+        nature.renderWithAO(this.freeCamera, renderer => this.buildingOutline.render(renderer, this.freeCamera));
+      } else {
+        this.renderer.render(this.scene, this.camera);
+        this.buildingOutline.render(this.renderer, this.camera);
+      }
+    } finally { if (nature) nature.sky.visible = false; }
     for (const view of this.tagged.views.values()) this.renderTaggedView(view);
+  }
+
+  /** Screen-space ambient occlusion in the free 3D view (Options). */
+  setAmbientOcclusion(on: boolean): void {
+    this.ambientOcclusion = on;
   }
 
   private clearBuildingViews(): void {
@@ -3254,6 +3497,7 @@ export class CityRenderer {
     this.clearGroundBase();
     // Release resources while the renderer still has its WebGL bookkeeping.
     this.ownedTextures.dispose();
+    this.nature?.dispose();
     this.sun?.shadow.dispose();
     this.vehicleSprites?.dispose();
     this.sculptModels?.dispose();
@@ -3272,6 +3516,8 @@ export class CityRenderer {
       this.pavement,
       this.lamps,
       this.lampGlow,
+      this.lampPools,
+      this.windowSpill,
       this.hydrants,
       this.trees,
       this.footRings,
@@ -3301,6 +3547,9 @@ export class CityRenderer {
     if (!this.wallPools.length) for (const material of this.facadeMats) material.dispose();
     if (!this.shopBase) this.shopMat?.dispose();
     if (!this.lampGlow) this.glowMat?.dispose();
+    this.lampPoolMat?.dispose();
+    this.windowSpillMat?.dispose();
+    this.streetLights?.dispose();
     if (!this.headlamps) this.headlampMat?.dispose();
     this.clearBuildingViews();
     this.tagged.set([], false);

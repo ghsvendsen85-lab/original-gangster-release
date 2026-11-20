@@ -29,6 +29,14 @@ describe('character detail at city viewing sizes', () => {
     expect(characterNeedsDetail(characterPixelHeight(c, 668), true)).toBe(true);
     expect(characterPixelHeight(camera(2.2, true), 668)).toBeCloseTo(characterPixelHeight(camera(2.2), 668));
   });
+  it('measures figures in the free 3D (perspective) view at the given distance', () => {
+    const c = new THREE.PerspectiveCamera(45, 1.5, .5, 4000);
+    c.position.set(0, 0, 40); c.lookAt(0, 0, 0); c.updateMatrixWorld(true); c.updateProjectionMatrix();
+    const pixels = characterPixelHeight(c, 668, 40);
+    const foot = new THREE.Vector3(0, -.9, 0).project(c), head = new THREE.Vector3(0, .9, 0).project(c);
+    expect(pixels).toBeCloseTo(Math.abs(head.y - foot.y) * 668 / 2, 1);
+    expect(characterPixelHeight(c, 668, 80)).toBeCloseTo(pixels / 2);
+  });
   it('rejects off-screen and depth-clipped people while allowing bodies across an edge', () => {
     expect(characterInView({ x: 1.03, y: 1.03, z: .2 })).toBe(true);
     expect(characterInView({ x: 1.2, y: 0, z: 0 })).toBe(false);

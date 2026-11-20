@@ -99,6 +99,9 @@ interface GameState {
   autoLowerRoofs: boolean;
   /** Street names painted on the road (not in the original; off by default). */
   roadNames: boolean;
+  /** Soft shadowing in corners and at wall feet in the free 3D view (costs frame rate; on by default). */
+  ambientOcclusion: boolean;
+  setAmbientOcclusion: (on: boolean) => void;
   /** The original's Mouse Reversal (Advanced Options): dragging moves the view the other way. */
   mouseReversal: boolean;
   /** Model texture quality; applies when the city next loads (A20). */
@@ -260,6 +263,10 @@ function readRoadNames(): boolean {
   try { return localStorage.getItem('og.roadNames') === '1'; } catch { return false; }
 }
 
+function readAmbientOcclusion(): boolean {
+  try { return localStorage.getItem('og.ambientOcclusion') !== '0'; } catch { return true; }
+}
+
 function readAutoLower(): boolean {
   try {
     return automaticRoofsPreference(localStorage.getItem('og.autoLowerRoofs'));
@@ -304,6 +311,7 @@ export const useGame = create<GameState>((set, get) => ({
   helpOpen: false,
   autoLowerRoofs: readAutoLower(),
   roadNames: readRoadNames(),
+  ambientOcclusion: readAmbientOcclusion(),
   mouseReversal: readMouseReversal(),
   textureQuality: readTextureQuality(),
   uiScale: readUiScale(),
@@ -594,6 +602,10 @@ export const useGame = create<GameState>((set, get) => ({
   setRoadNames: (roadNames) => {
     try { localStorage.setItem('og.roadNames', roadNames ? '1' : '0'); } catch { /* session only */ }
     set({ roadNames });
+  },
+  setAmbientOcclusion: (ambientOcclusion) => {
+    try { localStorage.setItem('og.ambientOcclusion', ambientOcclusion ? '1' : '0'); } catch { /* session only */ }
+    set({ ambientOcclusion });
   },
   setAutoLowerRoofs: (autoLowerRoofs) => {
     try {

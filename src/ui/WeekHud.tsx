@@ -65,7 +65,7 @@ export function WeekHud() {
   const setMessageBox=useGame(s=>s.setMessageBox);
   useGame(s=>s.version);
   const [view,setView]=useState<CityViewMode>('street');
-  const [removed,setRemoved]=useState(false),[flipped,setFlipped]=useState(false);
+  const [removed,setRemoved]=useState(false),[flipped,setFlipped]=useState(false),[free,setFree]=useState(false);
   const [rosterOpen,setRosterOpen]=useState(false),[rosterMode,setRosterMode]=useState<'people'|'orders'>('people');
   const [messageId,setMessageId]=useState<number|null>(null);
   // The street under the view, in the original's words (manual p.74).
@@ -77,7 +77,7 @@ export function WeekHud() {
   const state=useGame.getState;
   const worldRef=useRef(w);worldRef.current=w;
   useEffect(()=>{
-    const sync=()=>{const city=cameraApi.ref;if(city){setView(viewForZoom(city.getZoom()));setRemoved(city.areBuildingsRemoved());setFlipped(city.isFlipped());setPlace(streetLocation(worldRef.current,city.getTarget()));}};
+    const sync=()=>{const city=cameraApi.ref;if(city){setView(viewForZoom(city.getZoom()));setRemoved(city.areBuildingsRemoved());setFlipped(city.isFlipped());setFree(city.isFreeView());setPlace(streetLocation(worldRef.current,city.getTarget()));}};
     sync();const timer=window.setInterval(sync,150);return ()=>clearInterval(timer);
   },[]);
   const latest=w.messages.at(-1)?.id??0;
@@ -130,6 +130,7 @@ export function WeekHud() {
           {/* The ground wash shows from the rooftops too; only the street is too close for it. */}
           {view!=='street' && <>{OVERLAYS.map(o=><InterfaceButton key={o.id} label={o.label} icon={`overlays/${o.id}`} caption={o.caption} aria-pressed={overlays.includes(o.id)} onClick={()=>state().toggleOverlay(o.id)}/>)}
             <InterfaceButton label="Clear overlays" glyph="∅" caption="Clear" onClick={()=>state().setOverlays([])}/></>}
+          <InterfaceButton label="3D view" glyph="◈" caption="3D" aria-pressed={free} title="3D view (V): middle-drag or Q/E to turn, R/T to tilt" onClick={()=>cameraApi.ref?.toggleFreeView()}/>
           {view!=='plan' && <>
             <InterfaceButton label="Reverse view" glyph="↔" caption="Reverse" aria-pressed={flipped} title="Reverse view (F)" onClick={()=>cameraApi.ref?.flipView()}/>
             <InterfaceButton label={removed?'Restore buildings':'Remove buildings'} icon="orders/buyPremises" caption={removed?'Restore':'Remove'} aria-pressed={removed} title="Remove or restore buildings (B)" onClick={()=>cameraApi.ref?.toggleBuildingsRemoved()}/>

@@ -1,4 +1,4 @@
-import type { OrthographicCamera } from 'three';
+import type { OrthographicCamera, PerspectiveCamera } from 'three';
 
 /** Default capacity for small model galleries; the city supplies its actor limit. */
 export const MAX_DETAILED_CHARACTERS = 96;
@@ -17,8 +17,11 @@ export const MAX_DETAILED_STREET_CHARACTERS = 32;
 export const DETAIL_KEEP_METRES = 6;
 
 /** Screen size, not a fixed zoom: the same zoom covers different pixel heights
- * in the main city and the independent tagged viewport. */
-export function characterPixelHeight(camera: OrthographicCamera, viewportHeight: number): number {
+ * in the main city and the independent tagged viewport. A perspective camera
+ * measures a figure at `distance` from it (the free view's target). */
+export function characterPixelHeight(camera: OrthographicCamera | PerspectiveCamera, viewportHeight: number, distance = 1): number {
+  if ((camera as PerspectiveCamera).isPerspectiveCamera)
+    return camera.projectionMatrix.elements[5] * 1.8 / Math.max(.01, distance) * viewportHeight / 2;
   return Math.abs(camera.projectionMatrix.elements[5] * camera.matrixWorldInverse.elements[5]) * 1.8 * viewportHeight / 2;
 }
 

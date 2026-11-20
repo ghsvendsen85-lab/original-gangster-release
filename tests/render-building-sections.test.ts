@@ -89,7 +89,7 @@ function foregroundFixture() {
     hiddenRoofs:true, buildingsRemoved:false, streetsOpen:true, target:new THREE.Vector3(),
     foregroundCutaways:new Set<number>(), cutawayRay:new THREE.Raycaster(),
     cutawayPoint:new THREE.Vector3(Infinity,Infinity,Infinity), cutawayCamera:new THREE.Vector3(Infinity,Infinity,Infinity),
-    cutawayPerson:null, cutawayBuilding:null, cutawayFlipped:false, flipped:false,
+    cutawayPerson:null, cutawayBuilding:null, cutawayView:new THREE.Vector3(), dirScratch:new THREE.Vector3(), flipped:false, freeView:false,
     cutawayRevision:-2, cutawayRadius:-1, buildingSig:7, buildingViews:new Map(), buildingViewMeshes:new Map(),
     buildingIds:[100,200], mat4:new THREE.Matrix4(), picks:{mesh}, useTaggedBuildings:vi.fn(()=>null), buildingsDirty:false,
   };

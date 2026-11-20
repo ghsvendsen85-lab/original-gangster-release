@@ -41,6 +41,8 @@ export function CityView() {
   const [openingMessage, setOpeningMessage] = useState('Preparing the city…');
   const [renderAttempt, setRenderAttempt] = useState(0);
   const dragging = useRef(false);
+  /** This drag turns the free 3D view (middle button, or Alt with the right). */
+  const orbiting = useRef(false);
   const dragMoved = useRef(false);
   // A left-button drag draws a box and gathers your own people inside it.
   const boxing = useRef(false);
@@ -127,6 +129,7 @@ export function CityView() {
         // Street View drops the roofs by itself when the option is on.
         renderer.setHiddenRoofs(state.autoLowerRoofs && viewForZoom(renderer.getZoom()) === 'street');
         renderer.setRoadNames(state.roadNames);
+        renderer.setAmbientOcclusion(state.ambientOcclusion);
 
         // A new week rebuilds the ground plan and the skyline.
         if (s.world.week !== lastWeek || s.world.phase !== lastPhase) {
@@ -331,6 +334,7 @@ export function CityView() {
     }
     if (e.button === 2 || e.button === 1) {
       dragging.current = true;
+      orbiting.current = e.button === 1 || e.altKey;
       lastPointer.current = { x: e.clientX, y: e.clientY };
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
     }
@@ -358,6 +362,10 @@ export function CityView() {
     const dy = e.clientY - lastPointer.current.y;
     if (Math.abs(dx) + Math.abs(dy) > 3) dragMoved.current = true;
     lastPointer.current = { x: e.clientX, y: e.clientY };
+    if (orbiting.current && rendererRef.current.isFreeView()) {
+      rendererRef.current.orbitBy(dx, dy);
+      return;
+    }
     // Mouse Reversal (the original's Advanced Options) pans the other way.
     const flip = useGame.getState().mouseReversal ? -1 : 1;
     rendererRef.current.panBy(dx * flip, dy * flip);
