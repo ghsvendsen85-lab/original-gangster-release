@@ -9,6 +9,7 @@ import { finishTradingRestarts } from './businessState';
 import { validateSaveWorld, validateSaveWorldResponsive } from './saveSchema';
 import { canGoStraight, rolloverOrders } from './api';
 import { planGang } from './ai';
+import { tickMidWeekAi } from './midWeekAi';
 import { createWorld } from './citygen';
 import { repairLegacyStreetSpawns } from './streetPlacement';
 import { closeFinances, currentFinances, openFinances } from './finances';
@@ -289,6 +290,8 @@ export class Sim {
     tickGoods(w, 1);
     tickOrders(w, this.rng, 1, loadout);
     if (this.resolveImmediateOutcome()) return;
+    // The rival gangs act during the week too (answer attacks, find idle crews work).
+    tickMidWeekAi(w);
     tickStreetOrders(w, this.rng, 1, loadout);
     if (this.resolveImmediateOutcome()) return;
     tickBuildingEmergencies(w, this.rng, 1);

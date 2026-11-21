@@ -43,6 +43,7 @@ import type { Rng } from './rng';
 import type { DiplomacyLevel, Gang, GameOptions, ID, WorldState } from './types';
 import { gangWealth, territoryCount } from './world';
 import { peopleList } from './entityLists';
+import { noteWrong } from './recentWrongs';
 
 export const ORIGINAL_AI_PROFILES: readonly (readonly number[])[] = [
   // 0..7 Passive
@@ -116,6 +117,8 @@ export function provoke(w: WorldState, wrongedGangId: ID | null | undefined, byG
   if (!amount || wrongedGangId == null || byGangId == null || wrongedGangId === byGangId) return;
   const gang = w.gangs[wrongedGangId];
   if (!gang || gang.isPlayer || gang.eliminated || !w.gangs[byGangId]) return;
+  // Answered during the week as well (midWeekAi.ts).
+  noteWrong(w, wrongedGangId, byGangId, amount);
   if (gang.aiProfile) {
     gang.aiHostility ??= {};
     gang.aiHostility[byGangId] = Math.max(106, clampByte((gang.aiHostility[byGangId] ?? startingHostility(gang, w.gangs[byGangId])) + amount));

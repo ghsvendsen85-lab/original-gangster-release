@@ -310,7 +310,9 @@ export function issueOrder(w: WorldState, gangId: ID, input: IssueOrderInput): A
   }
 
   const charge = weekCharge(w, team, order);
-  if (!fitsWeek(w, team, order, team.timeUsed)) {
+  // An urgent order pushes the crew's other work aside: it only has to fit the time left.
+  const urgentNow = w.phase === 'week' && !!opts.urgent;
+  if (urgentNow ? !fitsWeek(w, team, order, 0) : !fitsWeek(w, team, order, team.timeUsed)) {
     // Undermanned for the whole area, the lieutenant offers what he can manage.
     if (def.target === 'area' && targetBuildingIds.length > 1) {
       for (let k = targetBuildingIds.length - 1; k >= 1; k--) {
