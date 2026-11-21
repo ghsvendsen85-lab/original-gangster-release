@@ -800,9 +800,10 @@ export const useGame = create<GameState>((set, get) => ({
   },
   openWeekOrders: () => {
     const { sim, finishingWeek, streetLoading, paused } = get();
-    // Orders are given with the week stopped.
-    if (!sim || sim.world.phase !== 'week' || finishingWeek || streetLoading || !paused) return;
-    set({ weekOrders: true, organizerTab: 'lieutenants', organizerCollapsed: false, planningView: 'city', jobCard: null, specialistCard: null, pickMode: null, sheet: null });
+    if (!sim || sim.world.phase !== 'week' || finishingWeek || streetLoading) return;
+    // Orders are given with the week stopped: opening the order book pauses it, on the City Plan.
+    if (!paused) get().setPaused(true);
+    set({ weekOrders: true, organizerTab: 'lieutenants', organizerCollapsed: false, planningView: 'plan', jobCard: null, specialistCard: null, pickMode: null, sheet: null });
   },
   closeWeekOrders: () => set({ weekOrders: false, jobCard: null, specialistCard: null, pickMode: null, sheet: null, organizerCollapsed: false }),
   toggleMessageFilter: (c) =>
