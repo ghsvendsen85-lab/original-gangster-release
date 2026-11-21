@@ -544,6 +544,8 @@ export class CityRenderer {
   private smokeWind = new THREE.Vector2(.9, .35);
   private rainLight = new THREE.Color();
   private rainCentre = new THREE.Vector3();
+  /** The person the camera rides along with (null: free). */
+  private followId: ID | null = null;
 
   constructor(canvas: HTMLCanvasElement, world: WorldState, deferConstruction = false) {
     this.world = world;
@@ -2957,6 +2959,8 @@ export class CityRenderer {
   }
 
   panBy(dxPixels: number, dyPixels: number): void {
+    // Moving the view by hand lets go of whoever it was following.
+    this.followId = null;
     const scale = (240 / this.zoom) / this.height;
     // Screen right/down mapped into the ground plane for the current bearing.
     const a = this.viewAzimuth();
@@ -2969,6 +2973,7 @@ export class CityRenderer {
   }
 
   centerOn(x: number, y: number): void {
+    this.followId = null;
     this.target.set(x, 0, y);
     this.clampTarget();
     this.updateCamera();
@@ -3230,6 +3235,31 @@ export class CityRenderer {
     this.smokeNight = night;
   }
 
+  /** Ride along with someone: the view eases after them, in or out of a car. */
+  setFollow(personId: ID | null): void {
+    this.followId = personId;
+  }
+
+  getFollow(): ID | null {
+    return this.followId;
+  }
+
+  private updateFollow(dt: number): void {
+    if (this.followId == null) return;
+    const p = this.world.people[this.followId];
+    if (!p || p.status === 'dead' || this.world.phase !== 'week') { this.followId = null; return; }
+    const at = this.shownAt(p.id) ?? previewStreetPosition(p, this.world, this.subMinute, this.taggedPreview);
+    // Close the gap quickly but smoothly; a long jump (out of a building, a new street) is a cut.
+    const dx = at.x - this.target.x, dz = at.y - this.target.z;
+    if (Math.hypot(dx, dz) > 120) this.target.set(at.x, 0, at.y);
+    else {
+      const k = 1 - Math.exp(-Math.max(dt, 1 / 120) * 5);
+      this.target.x += dx * k; this.target.z += dz * k;
+    }
+    this.clampTarget();
+    this.updateCamera();
+  }
+
   /** Rain closes the distance in: fog comes in near the camera. */
   private applyRainFog(): void {
     const fog = this.scene.fog as THREE.Fog | null;
@@ -3432,6 +3462,7 @@ export class CityRenderer {
       }
       this.buildingsDirty = false;
     }
+    this.updateFollow(dt);
     const dusk = this.applyTimeOfDay();
     this.updateAtmosphere(dt);
     for (const [id, view] of this.tagged.views) {

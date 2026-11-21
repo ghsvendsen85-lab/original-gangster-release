@@ -66,6 +66,7 @@ export function WeekHud() {
   useGame(s=>s.version);
   const [view,setView]=useState<CityViewMode>('street');
   const [removed,setRemoved]=useState(false),[flipped,setFlipped]=useState(false),[free,setFree]=useState(false);
+  const [following,setFollowing]=useState<number|null>(null);
   const [rosterOpen,setRosterOpen]=useState(false),[rosterMode,setRosterMode]=useState<'people'|'orders'>('people');
   const [messageId,setMessageId]=useState<number|null>(null);
   // The street under the view, in the original's words (manual p.74).
@@ -77,7 +78,7 @@ export function WeekHud() {
   const state=useGame.getState;
   const worldRef=useRef(w);worldRef.current=w;
   useEffect(()=>{
-    const sync=()=>{const city=cameraApi.ref;if(city){setView(viewForZoom(city.getZoom()));setRemoved(city.areBuildingsRemoved());setFlipped(city.isFlipped());setFree(city.isFreeView());setPlace(streetLocation(worldRef.current,city.getTarget()));}};
+    const sync=()=>{const city=cameraApi.ref;if(city){setView(viewForZoom(city.getZoom()));setRemoved(city.areBuildingsRemoved());setFlipped(city.isFlipped());setFree(city.isFreeView());setFollowing(city.getFollow());setPlace(streetLocation(worldRef.current,city.getTarget()));}};
     sync();const timer=window.setInterval(sync,150);return ()=>clearInterval(timer);
   },[]);
   const latest=w.messages.at(-1)?.id??0;
@@ -103,6 +104,7 @@ export function WeekHud() {
   const watch=(p:Person)=>{state().selectPerson(p.id);state().requestCamera(previewPosition(p,sim.subMinute,{x:0,y:0}));};
   const eventView=(m:typeof message|undefined)=>{if(!m)return;if(m.pos)state().requestCamera(m.pos);if(m.personId!=null)state().selectPerson(m.personId);};
   return <div className="classic-hud">
+    {following!=null&&w.people[following]&&<div className="paper hint-pill follow-pill" role="status">Following {w.people[following].name} · G or drag the view to stop</div>}
     <header className="week-bars">
       <div className="week-titlebar">
         <button className="week-exit" onClick={()=>state().setQuitPrompt(true)} title="Exit to the main menu (Ctrl+Q)">Exit</button>

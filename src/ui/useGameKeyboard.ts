@@ -183,6 +183,14 @@ export function useGameKeyboard() {
         case 'F':
           cameraApi.ref?.flipView();
           break;
+        // G: the view follows the selected person (again to let go).
+        case 'g':
+        case 'G':
+          if (!planning && cameraApi.ref) {
+            const city = cameraApi.ref, id = s.selectedPersonId;
+            city.setFollow(city.getFollow() != null || id == null ? null : id);
+          }
+          break;
         // The free 3D view: V switches it, Q/E turn it, R/T raise and lower it.
         case 'v':
         case 'V':

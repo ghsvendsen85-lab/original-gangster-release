@@ -5,7 +5,7 @@ import { cancelOrder, clearStreetOrder, leaveVehicle, returnToBase, setWaiting }
 import { ORDERS } from '../sim/constants';
 import { cargoActivity, goodsTotal } from '../sim/cargo';
 import { restingStatus } from '../sim/transport';
-import { taggedViewApi } from './CityView';
+import { cameraApi, taggedViewApi } from './CityView';
 import { Portrait } from './Portrait';
 import { bossInsideOffice } from '../render/characterPresentation';
 import { InterfaceButton } from './InterfaceControls';
@@ -23,6 +23,7 @@ export function TaggedWindow({id}: {id: number}) {
   const setPaused = useGame(s => s.setPaused);
   useGame(s => s.version);
   const [mode, setMode] = useState<'street' | 'roof'>('street');
+  const [, setFollowTick] = useState(0);
   const viewport = useRef<HTMLDivElement>(null);
   const candidate = id == null ? null : sim.world.people[id];
   const person = candidate && !bossInsideOffice(candidate) ? candidate : null;
@@ -62,6 +63,8 @@ export function TaggedWindow({id}: {id: number}) {
     </header>
     <div className="tagged-toolbar" aria-label="Tagged window controls">
       <InterfaceButton label="Center View" icon="hud/follow" title="Center the main view on this character" onClick={() => requestCamera(previewPosition(person, sim.subMinute, { x: 0, y: 0 }))}/>
+      <InterfaceButton label="Follow" glyph="◎" aria-pressed={cameraApi.ref?.getFollow() === id} title="Follow: the main view rides along with this character (G; drag or move the view to stop)"
+        onClick={() => { const city = cameraApi.ref; if (city) city.setFollow(city.getFollow() === id ? null : id); setFollowTick(t => t + 1); }}/>
       <InterfaceButton label="Toggle Display" glyph="▱" aria-pressed={mode === 'roof'} title={`Toggle Display — show ${mode==='street'?'Rooftop':'Street'} View in this window`}
         onClick={() => setMode(mode === 'street' ? 'roof' : 'street')}/>
       {mine && active && <>
