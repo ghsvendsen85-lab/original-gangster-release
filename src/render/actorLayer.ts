@@ -3,6 +3,11 @@ import type { Person } from '../sim/types';
 import { characterStyle } from './characterPresentation';
 import type {CharacterAction} from './characterActions';
 import { DETAILED_STRIDE_METRES } from './detailedCharacters';
+
+/** One cycle of the detailed characters' run clip covers this much ground:
+ * a running stride is longer than a walking one, so the legs keep pace with
+ * the ground instead of pumping on the spot. */
+export const RUN_STRIDE_METRES = 2.7;
 import { ACTOR_STYLES, ACTOR_STRIDE_METRES, actorGeometry, createActorMaterial, createActorDepthMaterial, type ActorStyle } from './actors';
 
 interface Batch {
@@ -26,7 +31,7 @@ export class ActorMotion {
 
   /** `phase` drives the simple figures' gait; `detailPhase` the detailed
    * characters' walk clip, whose stride is longer. */
-  sample(id: number, x: number, z: number, moving: boolean, facing: number): { phase: number; detailPhase: number; facing: number } {
+  sample(id: number, x: number, z: number, moving: boolean, facing: number, running = false): { phase: number; detailPhase: number; facing: number } {
     let previous = this.samples.get(id);
     if (!previous) {
       const start = (id * 1.37) % (Math.PI * 2);
@@ -37,7 +42,7 @@ export class ActorMotion {
       // Camera culling, save restore or teleport must not animate a long unseen journey.
       if (moving && travelled < 12) {
         previous.phase = (previous.phase + travelled * Math.PI * 2 / ACTOR_STRIDE_METRES) % (Math.PI * 2);
-        previous.detailPhase = (previous.detailPhase + travelled * Math.PI * 2 / DETAILED_STRIDE_METRES) % (Math.PI * 2);
+        previous.detailPhase = (previous.detailPhase + travelled * Math.PI * 2 / (running ? RUN_STRIDE_METRES : DETAILED_STRIDE_METRES)) % (Math.PI * 2);
       }
       if (moving) previous.facing = facing;
       previous.x = x;

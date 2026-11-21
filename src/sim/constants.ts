@@ -8,15 +8,20 @@ export const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'
 /** Working day starts at 8am. */
 export const DAY_START_HOUR = 8;
 /**
- * What the clock shows: a twelve-hour day, 8 am to 8 pm (issue 17 item 14).
- * The working day is still 480 simulated minutes, and the week the original's
- * 12 real minutes at normal speed, so one and a half clock minutes pass for
- * each simulated one. Everything the player reads as time (the clock, an
- * order's hours) goes through clockMinutes; nothing the simulation counts in
- * changes, so orders take the share of the week they always did.
+ * What the clock shows: the whole day and night, 8 am round to 8 am (playtest,
+ * 21 November; it was 8 am to 8 pm, issue 17 item 14). The working day is
+ * still 480 simulated minutes, and the week the original's 12 real minutes at
+ * normal speed, so three clock minutes pass for each simulated one.
+ * Everything the player reads as time (the clock, an order's hours) goes
+ * through clockMinutes; nothing the simulation counts in changes, so orders
+ * take the share of the week they always did.
  */
-export const DAY_CLOCK_HOURS = 12;
+export const DAY_CLOCK_HOURS = 24;
 export const clockMinutes = (minutes: number): number => minutes * DAY_CLOCK_HOURS * 60 / MINUTES_PER_DAY;
+/** The hour on the clock (0..24, fractional) at `phase` (0..1) through a day. */
+export const clockHour = (phase: number): number => (DAY_START_HOUR + DAY_CLOCK_HOURS * phase) % 24;
+/** Day names as the clock reads them: past midnight on Friday it is Saturday morning. */
+export const CLOCK_DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 /** World geometry, in metres. */
 export const BLOCK_SIZE = 40;

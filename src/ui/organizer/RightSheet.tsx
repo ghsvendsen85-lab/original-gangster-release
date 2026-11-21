@@ -17,7 +17,7 @@ import {
   transferWeapon,
 } from '../../sim/api';
 import { GANG_COLORS, ORDERS, ORDER_GROUPS, VEHICLES, VEHICLE_ORDER, WEAPONS, WEAPON_ORDER, clockMinutes, type OrderDef } from '../../sim/constants';
-import { SKILLS, SKILL_LABELS, type Building, type ID, type OrderType, type Person, type Skill, type VehicleId, type WeaponId } from '../../sim/types';
+import { SKILLS, SKILL_LABELS, type Building, type Gang, type ID, type OrderType, type Person, type Skill, type VehicleId, type WeaponId, type WorldState } from '../../sim/types';
 import { buildingName, money, placeName } from '../../sim/world';
 import { orderSkillText } from '../../sim/orderSkills';
 import { buildingMapIntel } from '../../sim/mapIntel';
@@ -31,6 +31,7 @@ import { handleMapHit } from '../mapClick';
 import { selectableOrderPerson, selectableOrderSite, selectedOrderSites } from '../../app/orderSelection';
 import { resourceDragProps, useResourceDrop } from '../resourceDrag';
 
+import { inCustody } from '../../sim/prison';
 import { buildingList } from '../../sim/entityLists';
 /** A length of crew time as the clock counts it (a twelve-hour day: constants.ts clockMinutes). */
 export function hours(simMinutes: number): string {
@@ -136,6 +137,11 @@ export function RightSheet() {
       kicker = 'Resource details · hoods';
       body = <PoolSheet teamId={team?.id} />;
       break;
+    case 'prison':
+      title = 'Prison';
+      kicker = 'Resource details · held by the law';
+      body = <PrisonSheet />;
+      break;
     case 'weapons':
       title = 'Weapons';
       kicker = 'Resource details · black market';
@@ -189,6 +195,7 @@ export function RightSheet() {
 const RESOURCE_TABS = [
   { id: 'map', label: 'City Map', icon: 'tabs/maps', key: '' },
   { id: 'hoods', label: 'Hoods', icon: 'groups/personnel', key: 'H' },
+  { id: 'prison', label: 'Prison', icon: 'status/jailed', key: '' },
   { id: 'weapons', label: 'Weapons', icon: 'weapons/pistol', key: 'W' },
   { id: 'vehicles', label: 'Vehicles', icon: 'vehicles/coupe', key: 'V' },
   { id: 'recruits', label: 'Recruitment', icon: 'orders/recruit', key: '' },
@@ -212,7 +219,8 @@ export function ResourceWindow() {
     if (id === 'map') { setSheet(null); setPlanningView('plan'); }
     else setSheet({ kind: id });
   };
-  const count = (id: ResourceTabId) => id === 'hoods' ? ` · ${gang.poolIds.length}` : id === 'recruits' ? ` · ${gang.recruitIds.length}` : '';
+  const count = (id: ResourceTabId) => id === 'hoods' ? ` · ${gang.poolIds.filter((pid) => !inCustody(sim.world.people[pid])).length}` : id === 'recruits' ? ` · ${gang.recruitIds.length}`
+    : id === 'prison' ? (n => n ? ` · ${n}` : '')(prisoners(sim.world, gang).length) : '';
   return (
     <div className="resource-window">
       <div className="resource-tabs" role="tablist" aria-label="Map and resources">
@@ -294,9 +302,10 @@ function PoolSheet({ teamId }: { teamId?: ID }) {
   const [dropProps, dropOver] = useResourceDrop({ kind: 'pool' });
   const w = sim.world;
   const gang = sim.playerGang;
+  // Anyone the law holds is on the Prison tab, not here.
   const pool = gang.poolIds
     .map((id) => w.people[id])
-    .filter(Boolean)
+    .filter((p) => p && !inCustody(p))
     .sort((a, b) => b.skills[sortBy] - a.skills[sortBy]);
 
   return (
@@ -333,6 +342,62 @@ function PoolSheet({ teamId }: { teamId?: ID }) {
             </button>
           </div>
         ))
+      )}
+    </div>
+  );
+}
+
+/** Everyone of the gang the law holds: hoods (out of their crews), lieutenants, staff, the boss. */
+function prisoners(w: WorldState, gang: Gang): Person[] {
+  const held = new Set(gang.prisonIds ?? []);
+  for (const p of Object.values(w.people) as Person[]) if (p.gangId === gang.id && inCustody(p)) held.add(p.id);
+  return [...held].map(id => w.people[id]).filter((p): p is Person => inCustody(p));
+}
+
+const ROLE_WORD: Partial<Record<Person['role'], string>> = { boss: 'Boss', lieutenant: 'Lieutenant', hood: 'Hood', accountant: 'Accountant', lawyer: 'Lawyer' };
+
+/** The gang's people in the hands of the law, with how long each has left. */
+function PrisonSheet() {
+  const sim = useGame((s) => s.sim)!;
+  const setSheet = useGame((s) => s.setSheet);
+  const w = sim.world, gang = sim.playerGang;
+  const held = prisoners(w, gang);
+  const order = { jailed: 0, onTrial: 1, arrested: 2 } as Record<string, number>;
+  held.sort((a, b) => (order[a.status] ?? 3) - (order[b.status] ?? 3) || a.name.localeCompare(b.name));
+  const caseOf = (p: Person) => Object.values(w.cases).find(c => c.defendantId === p.id && (c.status === 'awaiting' || c.status === 'onTrial'));
+  const when = (p: Person) => {
+    if (p.status === 'jailed') return p.jailWeeks >= 999 ? 'for life' : `${p.jailWeeks} ${p.jailWeeks === 1 ? 'week' : 'weeks'} left`;
+    const c = caseOf(p);
+    if (c) return `${c.crime}; verdict ${c.weeksToTrial <= 0 ? 'this week' : `in ${c.weeksToTrial} ${c.weeksToTrial === 1 ? 'week' : 'weeks'}`}`;
+    return 'held for questioning';
+  };
+  return (
+    <div>
+      <p className="tiny muted" style={{ marginTop: 0 }}>
+        Hoods held by the law leave their crews and wait here; when they are released they come back to the pool. A lieutenant taken hands his crew to its first free hood and comes back as a hood. Your lawyer can work on their cases.
+      </p>
+      {held.length === 0 ? (
+        <Empty>Nobody of yours is behind bars.</Empty>
+      ) : (
+        held.map((p) => {
+          const team = p.teamId != null ? w.teams[p.teamId] : undefined;
+          return (
+            <div key={p.id} className="person-row">
+              <div className="avatar">
+                <Portrait person={p} gang={gang} size={34} />
+              </div>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <button className="name" style={{ textAlign: 'left' }} onClick={() => setSheet({ kind: 'person', id: p.id })}>
+                  {p.name}
+                </button>
+                <div className="tiny muted">{ROLE_WORD[p.role] ?? p.role}{team && p.role === 'lieutenant' ? ` · ${team.name}` : ''} · {when(p)}</div>
+              </div>
+              <span className="tag bad" title={ABSENT[p.status] ?? p.status}>
+                <Icon name={`status/${p.status}`} size={12} /> {ABSENT[p.status] ?? p.status}
+              </span>
+            </div>
+          );
+        })
       )}
     </div>
   );

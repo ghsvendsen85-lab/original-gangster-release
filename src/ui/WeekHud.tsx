@@ -21,7 +21,6 @@ import type { OverlayKind } from '../render/scene';
 import { previewPosition } from '../sim/movement';
 import { allocateWeapons } from '../sim/weapons';
 import { streetLocation } from '../sim/cityLayout';
-import { dayIndex } from '../sim/world';
 import { weatherWords } from '../sim/weather';
 import { VIEW_ZOOM, viewForZoom, type CityViewMode } from '../render/viewModes';
 import { cameraApi } from './CityView';
@@ -31,7 +30,7 @@ import { MapAccess } from './MapAccess';
 import { Minimap } from './Minimap';
 import { TaggedWindow } from './TaggedWindow';
 import { TutorialPanel } from './TutorialPanel';
-import { WeekClock, weekTime, WEEK_DAYS } from './WeekClock';
+import { WeekClock, weekDay, weekTime } from './WeekClock';
 import './interface.css';
 import { buildingList } from '../sim/entityLists';
 
@@ -110,7 +109,7 @@ export function WeekHud() {
       <div className="week-titlebar">
         <button className="week-exit" onClick={()=>state().setQuitPrompt(true)} title="Exit to the main menu (Ctrl+Q)">Exit</button>
         <span>Working week <b>{w.week}</b></span>
-        <span className="week-status">{paused?'Paused':finishing?'Finishing week':`${WEEK_DAYS[dayIndex(w.minute)]} · ${weekTime(w.minute)} · ${weatherWords(w)}`}</span>
+        <span className="week-status">{paused?'Paused':finishing?'Finishing week':`${weekDay(w.minute)} · ${weekTime(w.minute)} · ${weatherWords(w)}`}</span>
         <span className="week-place" title={place}>{place}</span>
         <span className="week-cash">Cash <b><MoneyRoll value={gang.cash} /></b></span>
       </div>
@@ -183,7 +182,7 @@ export function WeekHud() {
     {messageBox && <section className="interface-window message-window" aria-label="Message Box">
       <WindowHeading title={CATEGORIES[messageBox].name} onClose={()=>setMessageBox(null)}/>
       <div className="message-filter-row"><span>Slow time for</span>{(Object.keys(CATEGORIES) as MessageCategory[]).map(c=><button key={c} aria-label={`Slow time for ${CATEGORIES[c].short}`} aria-pressed={filter[c]} title={`${filter[c]?'Disable':'Enable'} ${CATEGORIES[c].name.toLowerCase()} slowing time`} onClick={()=>state().toggleMessageFilter(c)}><Icon name={`messages/${c}`} size={18}/></button>)}</div>
-      <div className="message-paper" aria-live="polite">{message?<><time>{WEEK_DAYS[dayIndex(message.minute)]} · {weekTime(message.minute)}</time><p>{message.text}</p></>:<p>Nothing to report.</p>}</div>
+      <div className="message-paper" aria-live="polite">{message?<><time>{weekDay(message.minute)} · {weekTime(message.minute)}</time><p>{message.text}</p></>:<p>Nothing to report.</p>}</div>
       <footer className="message-navigation">
         <button aria-label="Most recent message" title="Most recent message" disabled={!message||messageIndex===0} onClick={()=>setMessageId(null)}>«</button>
         <button aria-label="Newer message" title="Newer message" disabled={!message||messageIndex===0} onClick={()=>setMessageId(messages[messageIndex-1].id)}>‹</button>

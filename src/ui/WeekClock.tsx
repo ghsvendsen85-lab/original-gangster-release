@@ -1,21 +1,25 @@
 import { useGame } from '../app/store';
 import { SPEED_STAGES, stageIndex } from '../app/speed';
 import { DAY_START_HOUR, MINUTES_PER_DAY, clockMinutes } from '../sim/constants';
-import { dayIndex } from '../sim/world';
+import { clockDayIndex, dayIndex } from '../sim/world';
 
-export const WEEK_DAYS=['Mon','Tue','Wed','Thu','Fri'];
+export const WEEK_DAYS=['Mon','Tue','Wed','Thu','Fri','Sat'];
+/** The day the clock is in (after midnight, the next one), short. */
+export function weekDay(minute:number) {
+  return WEEK_DAYS[clockDayIndex(minute)]??'Fri';
+}
 /** Minutes into the working day. The last minute of the week belongs to
  * Friday evening (8:00 pm), not to a sixth morning: a plain remainder read
  * it, and anything stamped at the week's end, as "Fri · 8:00 am". */
 export function minuteOfDay(minute:number) {
   return minute-dayIndex(minute)*MINUTES_PER_DAY;
 }
-/** Minutes past 8 am on the clock, which shows a twelve-hour day (constants.ts clockMinutes). */
+/** Minutes past 8 am on the clock, which shows the whole day and night (constants.ts clockMinutes). */
 export function clockMinuteOfDay(minute:number) {
   return Math.floor(clockMinutes(minuteOfDay(minute)));
 }
 export function weekTime(minute:number) {
-  const within=clockMinuteOfDay(minute), h=DAY_START_HOUR+Math.floor(within/60), m=within%60;
+  const within=clockMinuteOfDay(minute), h=(DAY_START_HOUR+Math.floor(within/60))%24, m=within%60;
   return `${((h+11)%12)+1}:${String(m).padStart(2,'0')} ${h<12?'am':'pm'}`;
 }
 
@@ -24,8 +28,8 @@ export function WeekClock() {
   const game = useGame();
   const {sim,speed,paused,speedUp,speedDown,finishingWeek}=game;
   if(!sim)return null;
-  const minute=sim.world.minute, stage=stageIndex(speed), h=DAY_START_HOUR+clockMinuteOfDay(minute)/60;
-  const day=WEEK_DAYS[dayIndex(minute)], time=weekTime(minute);
+  const minute=sim.world.minute, stage=stageIndex(speed), h=(DAY_START_HOUR+clockMinuteOfDay(minute)/60)%24;
+  const day=weekDay(minute), time=weekTime(minute);
   const atMaximum=!paused&&(finishingWeek||stage===SPEED_STAGES.length-1);
   const state=finishingWeek?'Finishing week':paused?'Paused':speed===1?'Normal speed':`${speed} times speed`;
   return <section className="week-clock" aria-label={`Game clock: ${day}, ${time}, ${state}`} title={`${day} · ${time} · ${state}`}>
@@ -44,8 +48,8 @@ export function WeekClock() {
       <svg viewBox="0 0 100 100" aria-hidden>
         <path d="M6 18V6H18 M82 6H94V18 M94 82V94H82 M18 94H6V82" fill="none" stroke="#8a8069"/>
         <circle cx="50" cy="50" r="43" fill="#e6dfcc" stroke="#8a8069"/>
-        {/* The day runs 8 am to 8 pm: the hand goes once round the dial, from VIII
-            to VIII, and the night between is not played. The dial says which half
+        {/* The clock runs the whole day and night, 8 am round to 8 am: the hour
+            hand goes twice round the dial each day. The dial says which half
             of the day it is in. */}
         {Array.from({length:12},(_,i)=><line key={i} x1="50" y1="8" x2="50" y2={i%3===0?'17':'12'} stroke="#594a37" strokeWidth={i%3===0?'2':'1'} transform={`rotate(${i*30} 50 50)`}/>)}
         <text x="50" y="29">XII</text><text x="75" y="54">III</text><text x="50" y="80">VI</text><text x="25" y="54">IX</text>

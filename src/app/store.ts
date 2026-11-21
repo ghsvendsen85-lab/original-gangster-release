@@ -11,6 +11,7 @@ import { create } from 'zustand';
 import { fitAreaToWeek, type ApiResult } from '../sim/api';
 import { weekCharge } from '../sim/execution';
 import { ORDERS } from '../sim/constants';
+import { sortPrisoners } from '../sim/prison';
 import { Sim } from '../sim/sim';
 import { planGang } from '../sim/ai';
 import type { GameOptions, ID, MessageCategory, OrderOptions, OrderType, SpecialistJob, Vec2 } from '../sim/types';
@@ -64,6 +65,7 @@ export type OrganizerSheet =
   | { kind: 'weapons' }
   | { kind: 'vehicles' }
   | { kind: 'recruits' }
+  | { kind: 'prison' }
   | { kind: 'person'; id: ID }
   | { kind: 'clipboard' };
 
@@ -944,6 +946,8 @@ export function act<T>(fn: (sim: Sim) => T): T | undefined {
   if (sim.resolveImmediateOutcome()) { bump(); return undefined; }
   recordScorePeaks(sim.world);
   const result = applyLiveMovement(sim.world, sim.subMinute, () => fn(sim));
+  // A crew broken up, a hood stood down: anyone the law holds goes to the prison list at once.
+  sortPrisoners(sim.world);
   recordScorePeaks(sim.world);
   observeTargetRace(sim.world, undefined, 'boundary');
   sim.resolveImmediateOutcome();

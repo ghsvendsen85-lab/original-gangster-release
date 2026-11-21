@@ -161,13 +161,14 @@ describe('issue 10 item 14: a man with nothing to do is at the office', () => {
 describe('issue 10 item 19: the week clock', () => {
   it('reads the working day 8 am to 4 pm, and the end of the week as Friday afternoon', () => {
     expect(weekTime(0)).toBe('8:00 am');
-    // The clock shows a twelve-hour day (issue 17 item 14): a minute and a half for each simulated minute.
-    expect(weekTime(160)).toBe('12:00 pm');
-    expect(weekTime(479)).toBe('7:58 pm');
+    // The clock shows the whole day and night (playtest, 21 November): three clock minutes for each simulated one.
+    expect(weekTime(80)).toBe('12:00 pm');
+    expect(weekTime(240)).toBe('8:00 pm');
+    expect(weekTime(479)).toBe('7:57 am');
     expect(weekTime(480)).toBe('8:00 am');
-    expect(weekTime(MINUTES_PER_WEEK - 1)).toBe('7:58 pm');
-    // The settlement minute was read as a sixth morning ("Fri · 8:00 am").
-    expect(weekTime(MINUTES_PER_WEEK)).toBe('8:00 pm');
+    expect(weekTime(MINUTES_PER_WEEK - 1)).toBe('7:57 am');
+    // The settlement minute is the end of Friday's night: Saturday morning.
+    expect(weekTime(MINUTES_PER_WEEK)).toBe('8:00 am');
   });
 });
 

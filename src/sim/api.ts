@@ -73,6 +73,7 @@ import { canonicalAreaBlocks, lieutenantAreaChoices } from './lieutenantAreas';
 import { CENTRE_LOT, allBuildings, buildingDoor, dist, gangAssets, ownedBuildings, teamsOf, territoryBlocks } from './world';
 import { peopleList } from './entityLists';
 import { quitGangPayroll } from './payrollMark';
+import { inCustody } from './prison';
 
 export type ApiResult =
   | { ok: true; message?: string }
@@ -614,6 +615,7 @@ export function promote(w: WorldState, gangId: ID, personId: ID): ApiResult {
   const crew = p.teamId == null ? null : w.teams[p.teamId];
   if (!gang.poolIds.includes(personId) && !(crew?.gangId === gangId && crew.memberIds.includes(personId)))
     return fail('That hood is not in the pool or a crew.');
+  if (inCustody(p)) return fail(`${p.name} is held by the law.`);
   if (gang.teamIds.length >= maxTeams(gang)) return fail(`You already have ${maxTeams(gang)} lieutenants.`);
   const team = promoteToLieutenant(w, gang, p);
   // The crew he left has one fewer for its queued orders.
@@ -641,6 +643,7 @@ export function moveToTeam(w: WorldState, gangId: ID, personId: ID, teamId: ID):
   if (!gang.poolIds.includes(personId) && !(old?.gangId === gangId && old.memberIds.includes(personId)))
     return fail('That hood is not in the pool or a crew.');
   if (p.teamId === teamId) return ok();
+  if (inCustody(p)) return fail(`${p.name} is held by the law.`);
   if (team.memberIds.length >= MAX_TEAM_SIZE - 1) return fail('That crew is full.');
   if (old) old.memberIds = old.memberIds.filter((id) => id !== personId);
   gang.poolIds = gang.poolIds.filter((id) => id !== personId);

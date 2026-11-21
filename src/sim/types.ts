@@ -642,6 +642,8 @@ export interface Gang {
   cash: number;
   teamIds: ID[];
   poolIds: ID[];
+  /** Hoods held by the law (arrested, on trial, in prison), out of their crews until released (prison.ts). */
+  prisonIds?: ID[];
   accountantId: ID | null;
   lawyerId: ID | null;
   weapons: Record<WeaponId, number>;

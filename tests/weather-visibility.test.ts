@@ -12,12 +12,14 @@ function week(seed = 404) {
 }
 
 describe('weather and light in the simulation', () => {
-  it('is dark only late in the day', () => {
+  it('is dark through the night, and light again by morning', () => {
     const w = week();
-    w.minute = Math.round(MINUTES_PER_DAY * .4);
+    w.minute = Math.round(MINUTES_PER_DAY * .2); // about 1 pm
     expect(darknessNow(w)).toBe(0);
-    w.minute = Math.round(MINUTES_PER_DAY * .98);
+    w.minute = Math.round(MINUTES_PER_DAY * .7); // about 1 am
     expect(darknessNow(w)).toBeGreaterThan(.9);
+    w.minute = Math.round(MINUTES_PER_DAY * .98); // half past seven in the morning
+    expect(darknessNow(w)).toBe(0);
   });
 
   it('sees less in the dark and in the rain', () => {
@@ -33,7 +35,7 @@ describe('weather and light in the simulation', () => {
     w.minute = dry;
     expect(visibilityNow(w)).toBe(1);
     expect(weatherWords(w)).toBe('Dry');
-    w.minute = Math.round(MINUTES_PER_DAY * .98);
+    w.minute = Math.round(MINUTES_PER_DAY * .7); // about 1 am
     expect(visibilityNow(w)).toBeLessThan(.7);
     if (wet >= 0) {
       w.minute = wet;

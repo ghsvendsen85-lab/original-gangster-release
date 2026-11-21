@@ -4,6 +4,7 @@ import {
   DAY_NAMES,
   DAY_START_HOUR,
   clockMinutes,
+  CLOCK_DAY_NAMES,
   MINUTES_PER_DAY,
   STREET_WIDTH,
   VEHICLES,
@@ -387,14 +388,21 @@ export function dayIndex(minute: number): number {
   return Math.min(DAY_NAMES.length - 1, Math.floor(minute / MINUTES_PER_DAY));
 }
 
+/** The clock's day (0 Monday .. 5 Saturday morning): after midnight it is the next day. */
+export function clockDayIndex(minute: number): number {
+  const d = dayIndex(minute);
+  const within = Math.floor(clockMinutes(minute - d * MINUTES_PER_DAY));
+  return d + (DAY_START_HOUR * 60 + within >= 24 * 60 ? 1 : 0);
+}
+
 export function clockLabel(minute: number): string {
   const d = dayIndex(minute);
   const within = Math.floor(clockMinutes(minute - d * MINUTES_PER_DAY));
-  const hour = DAY_START_HOUR + Math.floor(within / 60);
+  const hour = (DAY_START_HOUR + Math.floor(within / 60)) % 24;
   const min = Math.floor(within % 60);
   const ampm = hour >= 12 ? 'pm' : 'am';
   const h12 = hour % 12 === 0 ? 12 : hour % 12;
-  return `${DAY_NAMES[d]} ${h12}:${min.toString().padStart(2, '0')}${ampm}`;
+  return `${CLOCK_DAY_NAMES[clockDayIndex(minute)]} ${h12}:${min.toString().padStart(2, '0')}${ampm}`;
 }
 
 /** 0..1 through the working day, for the day/night lighting cycle. */

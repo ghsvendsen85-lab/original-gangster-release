@@ -60,7 +60,7 @@ it('daytime does not add flat emission while the existing afternoon ramp remains
   view.applyTimeOfDay();
   expect(view.shopMat.emissiveIntensity).toBe(0);
   expect(view.facadeMats[0].emissiveIntensity).toBe(0);
-  view.world.phase = 'week'; view.world.minute = 479;
+  view.world.phase = 'week'; view.world.minute = 240; // 8 pm on the 24-hour clock
   view.applyTimeOfDay();
   expect(view.shopMat.emissiveIntensity).toBeGreaterThan(0);
   expect(view.shopMat.emissiveIntensity).toBeLessThanOrEqual(0.9);

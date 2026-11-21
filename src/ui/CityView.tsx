@@ -23,8 +23,7 @@ import { specialistTargetEligible } from '../sim/specialistJobs';
 import { lieutenantAreaChoices } from '../sim/lieutenantAreas';
 import { yieldForPaint } from '../yieldForPaint';
 import { StreetLoading } from './StreetLoading';
-import { WEEK_DAYS, weekTime } from './WeekClock';
-import { dayIndex } from '../sim/world';
+import { weekDay, weekTime } from './WeekClock';
 import { peopleList } from '../sim/entityLists';
 
 /**
@@ -479,7 +478,7 @@ export function CityView() {
       // Only once the week has opened: before that the orders are still being saved.
       failed={cityStatus === 'failed' && !!week}
       resolving={finishingWeek && !!week}
-      progress={week && sim ? `${WEEK_DAYS[dayIndex(sim.world.minute)] ?? 'Fri'} · ${weekTime(sim.world.minute)}` : undefined}
+      progress={week && sim ? `${weekDay(sim.world.minute)} · ${weekTime(sim.world.minute)}` : undefined}
       detail={cityError} attempts={renderAttempt}
       onRetry={() => setRenderAttempt(n => n + 1)}
       onSkip={() => { void useGame.getState().runWeekUnseen(); }}

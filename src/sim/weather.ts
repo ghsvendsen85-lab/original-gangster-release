@@ -1,4 +1,4 @@
-import { DAYS_PER_WEEK, MINUTES_PER_DAY } from './constants';
+import { DAYS_PER_WEEK, MINUTES_PER_DAY, clockHour } from './constants';
 import type { WorldState } from './types';
 
 /**
@@ -42,10 +42,28 @@ export function rainNow(w: WorldState): number {
   return rainOnDay(day, phase, w.options?.seed ?? 0);
 }
 
-/** Darkness now: 0 by day, rising through dusk to 1 at night (the street view's evening). */
+/**
+ * The light over a 24-hour clock (`hour` 0..24): the sun's height (noon,
+ * up from six to half past seven), the golden light of dusk and dawn, night,
+ * windows lit, and darkness as the street sees it. Evening comes on from late
+ * afternoon and is full by eight; the dark lifts from about five.
+ */
+export function daylight(hour: number): { noon: number; dusk: number; night: number; lightUp: number; dark: number } {
+  const h = ((hour % 24) + 24) % 24, evening = h >= 12;
+  const ramp = (a: number, b: number, c: number, d: number) => evening ? smooth(a, b, h) : 1 - smooth(c, d, h);
+  return {
+    noon: h > 6 && h < 19.5 ? Math.sin(Math.PI * (h - 6) / 13.5) : 0,
+    dusk: ramp(16.4, 19.3, 5.0, 7.2),
+    night: ramp(18.1, 20.0, 4.6, 6.3),
+    lightUp: ramp(16.2, 19.0, 5.2, 7.4),
+    dark: ramp(16.9, 19.5, 4.8, 6.8),
+  };
+}
+
+/** Darkness now: 0 by day, rising through dusk to 1 at night, lifting at dawn. */
 export function darknessNow(w: WorldState): number {
   if (w.phase !== 'week') return 0;
-  return smooth(.74, .96, dayAndPhase(w).phase);
+  return daylight(clockHour(dayAndPhase(w).phase)).dark;
 }
 
 /**

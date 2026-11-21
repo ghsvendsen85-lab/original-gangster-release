@@ -2046,9 +2046,10 @@ export function setLieutenantPay(w: WorldState, gang: Gang, hood: Person): void 
  * member and keeps its orders. With nobody to take it, a crew whose lieutenant
  * is dead is disbanded.
  */
-export function replaceLieutenant(w: WorldState, gang: Gang, t: Team): void {
+/** `heir`: who takes over (else the crew's best organiser). */
+export function replaceLieutenant(w: WorldState, gang: Gang, t: Team, heir?: Person): void {
   const lt = w.people[t.lieutenantId];
-  const stand = t.memberIds
+  const stand = heir ?? t.memberIds
     .map((id) => w.people[id])
     .filter((p) => p && p.status === 'active')
     .sort(

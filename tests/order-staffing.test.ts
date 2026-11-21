@@ -46,11 +46,15 @@ describe('requested manpower and actual dispatch', () => {
     }
   });
 
-  it('lets an arrested lieutenant direct an available hood, but does not send the lieutenant', () => {
-    const s = fixture(); s.w.people[s.t.lieutenantId].status = 'arrested';
+  it("hands an arrested lieutenant's crew to its first free hood, who takes the job; the lieutenant is not sent", () => {
+    const s = fixture(), lt = s.t.lieutenantId, heir = s.t.memberIds[0];
+    s.w.people[lt].status = 'arrested';
     const order = queue(s, { type: 'explore', buildingIds: [s.hq.id] });
     s.sim.launchWeek();
-    expect(order.assignedIds).toEqual(s.t.memberIds);
+    // Prison list (playtest, 21 November): the first free hood runs the crew.
+    expect(s.t.lieutenantId).toBe(heir);
+    expect(order.assignedIds).not.toContain(lt);
+    expect(order.assignedIds).toEqual([heir]);
   });
 
   it('waits for the entire requested party, then turns the returning man round for the next job', () => {
@@ -92,7 +96,15 @@ describe('requested manpower and actual dispatch', () => {
     expect(saved.dispatchWaitReason).toBeUndefined();
   });
 
-  it.each(['arrested', 'beaten'] satisfies PersonStatus[])('holds an accepted job when its person becomes %s and dispatches on recovery', status => {
+  it('sends somebody else when the man a job asked for is arrested (he leaves the crew for the prison list)', () => {
+    const s = fixture(), preferred = s.t.memberIds[0];
+    const order = queue(s, { type: 'explore', buildingIds: [s.hq.id], opts: { manpower: 1, preferredHoodId: preferred } });
+    s.w.people[preferred].status = 'arrested'; s.sim.launchWeek();
+    expect(order.opts.preferredHoodId).toBeNull();
+    expect(order.state).toBe('travelling'); expect(order.assignedIds).not.toContain(preferred);
+  });
+
+  it.each(['beaten'] satisfies PersonStatus[])('holds an accepted job when its person becomes %s and dispatches on recovery', status => {
     const s = fixture(), preferred = s.t.memberIds[0];
     const order = queue(s, { type: 'explore', buildingIds: [s.hq.id], opts: { manpower: 2, preferredHoodId: preferred } });
     s.w.people[preferred].status = status; s.sim.launchWeek();

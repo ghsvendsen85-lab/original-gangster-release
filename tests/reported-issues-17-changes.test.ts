@@ -24,12 +24,15 @@ describe('issue 17 items 3 and 3.1: the Bureau gauges are chosen with the game',
   });
 });
 
-describe('issue 17 item 14: the clock shows a twelve-hour day', () => {
-  it('runs from 8 am to 8 pm over the same working day', () => {
-    expect(clockMinutes(MINUTES_PER_DAY)).toBe(12 * 60);
+describe('issue 17 item 14, playtest 21 November: the clock shows the whole day and night', () => {
+  it('runs from 8 am round to 8 am over the same working day', () => {
+    expect(clockMinutes(MINUTES_PER_DAY)).toBe(24 * 60);
     expect(clockLabel(0)).toBe('Monday 8:00am');
-    expect(clockLabel(MINUTES_PER_DAY / 3)).toBe('Monday 12:00pm');
-    expect(clockLabel(MINUTES_PER_DAY - 1)).toBe('Monday 7:58pm');
+    expect(clockLabel(MINUTES_PER_DAY / 6)).toBe('Monday 12:00pm');
+    expect(clockLabel(MINUTES_PER_DAY / 2)).toBe('Monday 8:00pm');
+    // Past midnight it is the next day's small hours.
+    expect(clockLabel(MINUTES_PER_DAY * 2 / 3)).toBe('Tuesday 12:00am');
+    expect(clockLabel(MINUTES_PER_DAY - 1)).toBe('Tuesday 7:57am');
     expect(clockLabel(MINUTES_PER_DAY)).toBe('Tuesday 8:00am');
     // The week itself is no longer or shorter than it was.
     expect(MINUTES_PER_WEEK).toBe(2400);
@@ -76,8 +79,8 @@ describe('issue 17 item 28: the skill an order is done with', () => {
 });
 
 describe('issue 17 items 30 and 31: backup crews, and what a refusal teaches', () => {
-  const fixture = () => {
-    const sim = new Sim({ ...defaultGameOptions(), seed: 404, citySize: 10, startMoney: 100_000, startHoods: 8 });
+  const fixture = (seed = 404) => {
+    const sim = new Sim({ ...defaultGameOptions(), seed, citySize: 10, startMoney: 100_000, startHoods: 8 });
     staffFirstCrew(sim);
     const w = sim.world, gang = sim.playerGang, team = w.teams[gang.teamIds[0]];
     w.orders = {};
@@ -90,7 +93,7 @@ describe('issue 17 items 30 and 31: backup crews, and what a refusal teaches', (
   };
 
   it('lets a second crew be sent to raid the same place, says so, and has it stand down once the job is done', () => {
-    const { sim, w, gang, team } = fixture();
+    const { sim, w, gang, team } = fixture(405); // a city where the first crew's raid comes off (its odds are about 82%)
     const door = buildingDoor(w, allBuildings(w).find(b => b.isHQ && b.ownerGangId === gang.id)!);
     const shop = allBuildings(w).filter(b => b.ownerGangId == null && b.cls === 'commercial' && b.state === 'trading')
       .sort((a, b) => dist(buildingDoor(w, a), door) - dist(buildingDoor(w, b), door))[0];

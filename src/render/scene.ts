@@ -46,7 +46,8 @@ import {
 import { InstancePool, PoolView, type PoolSnapshot } from './pool';
 import { TextureOwner } from './textureOwnership';
 import { RoadSurfaceMaterial } from './roadSurface';
-import { DAY_CLOCK_HOURS, DAY_START_HOUR, DAYS_PER_WEEK, MINUTES_PER_DAY, MINUTES_PER_SECOND } from '../sim/constants';
+import { DAYS_PER_WEEK, MINUTES_PER_DAY, MINUTES_PER_SECOND, clockHour } from '../sim/constants';
+import { daylight } from '../sim/weather';
 import { DEFAULT_EFFECTS, rainAt, wetnessAt, type GraphicsEffects } from './graphicsEffects';
 import { RainFall } from './rainFall';
 import { VehicleLights } from './vehicleLights';
@@ -74,7 +75,7 @@ import { previewActorMotion, previewStreetPosition, type PreviewActorMotion } fr
 import { kerbside, roadHeading } from '../sim/vehicleNavigation';
 import { previewVehicle } from '../sim/movement';
 import { specialistParticipants } from '../sim/specialistJobs';
-import { vehicleDriver, atOffice, officeDoors } from '../sim/transport';
+import { vehicleDriver, atOffice, officeDoors, runningCivilian } from '../sim/transport';
 import { siteBuilding } from '../sim/premises';
 import { createVehicleMaterial, MOTORCYCLE_SEAT, VEHICLE_PROFILE, vehicleGeometry, vehicleForPerson, vehicleLightGeometry } from './vehicles';
 import { VehicleSpriteLayer } from './vehicleSpriteLayer';
@@ -2340,7 +2341,8 @@ export class CityRenderer {
         liveCharacterAction(cue,this.actionsEnabled);
       let facing = shuttle ? shuttle.facing : preview.moving ? preview.facing : driving ? roadHeading(w, pos) : r01(p.id, 3) * Math.PI * 2;
       // A burning man running from the door is moving, though he has no route.
-      const motion = this.actorMotion.sample(p.id, pos.x, pos.y, shuttle ? shuttle.walking : burn ? burn.fleeing : preview.moving, facing);
+      const running = !shuttle && !burn && !p.inVehicle && (p.streetOrder?.type === 'assault' || p.streetOrder?.type === 'kill' || runningCivilian(p));
+      const motion = this.actorMotion.sample(p.id, pos.x, pos.y, shuttle ? shuttle.walking : burn ? burn.fleeing : preview.moving, facing, running);
       if (!shuttle && (!driving || preview.moving || p.dest)) facing = motion.facing;
       if(burn)facing=burn.facing;
       else if(shock){
@@ -3121,16 +3123,13 @@ export class CityRenderer {
 
   /** Day/night colouring across the working week. */
   private applyTimeOfDay(): number {
-    const phase = this.world.phase === 'week' ? dayPhase(this.world.minute) : 0.36;
-    // The day runs 8 am to 8 pm (issue 17 item 14). The sun is up from six to
-    // half past seven: it climbs from a low morning angle, stands highest a
-    // little after noon, and is down before the day's last half hour.
-    const hour = DAY_START_HOUR + DAY_CLOCK_HOURS * phase;
-    const noon = Math.max(0, Math.sin(Math.PI * (hour - 6) / 13.5));
-    // From late afternoon the light goes golden (dusk); from about half past
-    // six the city darkens under its lamps and lit windows (night).
-    const dusk = smoothstep(0.7, 0.94, phase);
-    const night = smoothstep(0.84, 1.0, phase);
+    const phase = this.world.phase === 'week' ? dayPhase(this.world.minute) : 0.18; // planning: about noon
+    // The clock runs the whole day and night, 8 am round to 8 am. The sun is
+    // up from six to half past seven; from late afternoon the light goes
+    // golden (dusk), the city is dark under its lamps from eight (night)
+    // until the dawn, which comes golden again (sim/weather.ts daylight).
+    const hour = clockHour(phase);
+    const { noon, dusk, night, lightUp } = daylight(hour);
     // The weather (graphicsEffects.ts): rain comes and goes by the day; the
     // ground stays wet for a while after it stops.
     const day = this.world.week * DAYS_PER_WEEK + Math.floor((this.world.phase === 'week' ? this.world.minute : 0) / MINUTES_PER_DAY);
@@ -3204,8 +3203,7 @@ export class CityRenderer {
       this.nature.update(this.freeCamera, { zenith, horizon, ground, sunDir, sunColor, night: night * (1 - overcast) }, lerp(.25, .7, noon) * (1 - night * .6) + night * .35);
     } else this.nature?.rest();
 
-    // Windows come on as the afternoon light goes.
-    const lightUp = smoothstep(0.68, 0.92, phase);
+    // Windows come on as the afternoon light goes, and go off with the dawn.
     for (const m of this.facadeMats) m.emissiveIntensity = lightUp * 1.1;
     this.shopMat.emissiveIntensity = lightUp * 0.9;
     this.glowMat.opacity = dusk * 0.95;
@@ -3757,6 +3755,18 @@ export class CityRenderer {
   }
 
   /** Draw into the HUD opening without allocating a second scene or WebGL context. */
+  /** What the main view shows or hides by its zoom (updateCamera), plus the night's pools of light. */
+  private zoomDetailMeshes(): THREE.Object3D[] {
+    const list: THREE.Object3D[] = [this.signs.mesh, this.awnings.mesh, this.hydrants.mesh, this.trees.mesh,
+      this.fireEscapes.mesh, this.interiorMachines.mesh, this.cutawayCaps.mesh, this.cutawayLinings.mesh,
+      this.interiorStorage.mesh, this.lamps.mesh, this.tanks.mesh, this.columns.mesh];
+    if (this.treeModels) list.push(this.treeModels.group);
+    for (const pool of this.furniture.values()) list.push(pool.mesh);
+    if (this.lampPools) list.push(this.lampPools.mesh);
+    if (this.windowSpill) list.push(this.windowSpill.mesh);
+    return list;
+  }
+
   private renderTaggedView(t: TaggedView): void {
     const r = t.rect;
     if (!r || !t.visible || !this.streetsOpen) return;
@@ -3769,6 +3779,14 @@ export class CityRenderer {
     const shadowCamera = this.sun.shadow.camera;
     const shadowBounds = [shadowCamera.left, shadowCamera.right, shadowCamera.top, shadowCamera.bottom];
     const ringVisible = this.selectionRing.visible;
+    // The inset is its own view (playtest, 21 November): the main view's fog
+    // and its zoom's level of detail must not reach it. Its camera stands 900 m
+    // off the watched person, so the main view's fog, set for its own zoom,
+    // hazed the whole inset when the main view zoomed in, and the street
+    // furniture that the main view drops when zoomed out went from it too.
+    const fog = this.scene.fog as THREE.Fog | null;
+    const fogBefore = fog ? [fog.near, fog.far] : null;
+    const detail = this.zoomDetailMeshes(), detailBefore = detail.map(o => o.visible);
     const restoreBuildings = this.useTaggedBuildings(r.mode === 'street');
     const watched = this.world.people[r.personId];
     const profile = watched && this.vehicleProfile(vehicleForPerson(this.world, watched));
@@ -3803,6 +3821,10 @@ export class CityRenderer {
       shadowCamera.top = extent; shadowCamera.bottom = -extent;
       shadowCamera.updateProjectionMatrix();
       this.selectionRing.visible = false;
+      if (fog) { fog.near = 900 + 120; fog.far = 900 + 900 * (1 - .5 * this.rainNow); }
+      for (const o of detail) o.visible = true;
+      if (this.lampPools) this.lampPools.mesh.visible = (this.lampPoolMat?.uniforms.strength.value ?? 0) > .005;
+      if (this.windowSpill) this.windowSpill.mesh.visible = (this.windowSpillMat?.uniforms.strength.value ?? 0) > .005;
       if (this.vehicleSpritesActive) this.refreshTraffic(this.headlampMat.opacity / .9, t.camera);
       this.renderer.setViewport(r.x, this.height - r.y - r.height, r.width, r.height);
       this.renderer.setScissor(left, this.height - bottom, right - left, bottom - top);
@@ -3825,6 +3847,8 @@ export class CityRenderer {
       [shadowCamera.left, shadowCamera.right, shadowCamera.top, shadowCamera.bottom] = shadowBounds;
       shadowCamera.updateProjectionMatrix();
       this.selectionRing.visible = ringVisible;
+      if (fog && fogBefore) [fog.near, fog.far] = fogBefore;
+      detail.forEach((o, i) => { o.visible = detailBefore[i]; });
       if (this.vehicleSpritesActive) this.refreshTraffic(this.headlampMat.opacity / .9);
       this.renderer.setViewport(0, 0, this.width, this.height);
       this.renderer.setScissorTest(false);

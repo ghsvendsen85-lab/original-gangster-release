@@ -10,6 +10,7 @@ import { validateSaveWorld, validateSaveWorldResponsive } from './saveSchema';
 import { canGoStraight, rolloverOrders } from './api';
 import { planGang } from './ai';
 import { tickMidWeekAi } from './midWeekAi';
+import { sortPrisoners } from './prison';
 import { createWorld } from './citygen';
 import { repairLegacyStreetSpawns } from './streetPlacement';
 import { closeFinances, currentFinances, openFinances } from './finances';
@@ -129,6 +130,7 @@ export class Sim {
   launchWeek(): void {
     const w = this.world;
     if (w.phase !== 'planning') return;
+    sortPrisoners(w);
     observeTargetRace(w, undefined, 'boundary');
     if (this.resolveImmediateOutcome()) return;
     recordScorePeaks(w);
@@ -302,6 +304,7 @@ export class Sim {
     reconcileTransport(w);
     tickCombat(w, this.rng, 1, undefined, loadout, peaceFireExclusions);
     tickSightings(w, this.rng, sightingBefore);
+    sortPrisoners(w);
     // The minute's score peaks read only its closing state, which nothing but
     // the player changes before the next tick: they are taken in the first
     // sub-step after it (settleDeferred), not in this frame.
@@ -351,7 +354,7 @@ export class Sim {
       case 1: weeklyEconomy(w, this.rng); break;
       case 2: weeklyTaxes(w, this.rng); break;
       case 3: this.settleAudits(); break;
-      case 4: weeklyLaw(w, this.rng); break;
+      case 4: weeklyLaw(w, this.rng); sortPrisoners(w); break;
       case 5: weeklyFbi(w, this.rng); break;
       case 6: weeklyOpinion(w, this.rng); break;
       case 7: territoryGoodwill(w); break;

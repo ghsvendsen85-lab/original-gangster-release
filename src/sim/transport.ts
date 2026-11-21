@@ -23,7 +23,9 @@ export function vehicleDriver(w: WorldState, p: Person): Person {
 export const RETURN_UNLOAD_MINUTES = 8;
 const absoluteMinute = (w: WorldState) => w.week * MINUTES_PER_WEEK + w.minute;
 /** A pursuer on foot moves this much faster than a walker. */
-export const PURSUIT_PACE = 1.5;
+/** Running, against walking: about 4 m/s on screen at normal speed (playtest,
+ * 21 November: the run looked a sprint but went at a brisk walk, 1.5×). */
+export const PURSUIT_PACE = 2.2;
 /** The original runs 1 in 64 civilian errand legs (POP §4.1, rand 0x281 → run
  * flag). Chosen from the person and the leg's destination, so nothing extra is
  * saved and a restored game makes the same choice. */
