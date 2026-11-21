@@ -9,7 +9,7 @@ vi.mock('../src/audio/streetSound', () => ({
     fall: (gain: number, pan: number) => calls.push({ kind: 'fall', gain, pan }),
     explosion: (gain: number, pan: number) => calls.push({ kind: 'explosion', gain, pan }),
     flash: (gain: number, pan: number) => calls.push({ kind: 'flash', gain, pan }),
-    horn: () => {}, siren: () => {}, setBeds: () => {},
+    horn: () => {}, siren: () => {}, setBeds: () => {}, setAmbience: () => {}, tramBell: () => {},
   },
 }));
 
