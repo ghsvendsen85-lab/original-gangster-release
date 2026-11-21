@@ -5,3 +5,6 @@ release/
 *.log
 .DS_Store
 Thumbs.db
+
+# Local motorcycle model preview
+moto-preview.html
