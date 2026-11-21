@@ -46,7 +46,15 @@ import {
 import { InstancePool, PoolView, type PoolSnapshot } from './pool';
 import { TextureOwner } from './textureOwnership';
 import { RoadSurfaceMaterial } from './roadSurface';
-import { DAY_CLOCK_HOURS, DAY_START_HOUR, MINUTES_PER_SECOND } from '../sim/constants';
+import { DAY_CLOCK_HOURS, DAY_START_HOUR, DAYS_PER_WEEK, MINUTES_PER_DAY, MINUTES_PER_SECOND } from '../sim/constants';
+import { DEFAULT_EFFECTS, rainAt, wetnessAt, type GraphicsEffects } from './graphicsEffects';
+import { RainFall } from './rainFall';
+import { VehicleLights } from './vehicleLights';
+import { AmbientSmoke, type SmokeSource } from './ambientSmoke';
+import { NeonSigns, NEON_BLADE, neonWordFor } from './neonSigns';
+import { RiverReflection } from './riverReflection';
+import { RIVER_LEVEL } from './riverBanks';
+import { presentationEvents } from '../sim/presentationEvents';
 import { releaseAttachedShaders, ShadowMaterialOwner } from './shadowMaterialOwnership';
 import { prepareScene } from './prepareScene';
 import { yieldForInput } from '../yieldForInput';
@@ -514,6 +522,28 @@ export class CityRenderer {
   /** False while the week is being planned: nobody and nothing is on the streets. */
   private streetsOpen = true;
   private lastFrame = 0;
+  // Optional effects (Options → Graphics effects; src/render/graphicsEffects.ts).
+  private effects: GraphicsEffects = { ...DEFAULT_EFFECTS };
+  private rainFall: RainFall | null = null;
+  private vehicleLights: VehicleLights | null = null;
+  private smoke: AmbientSmoke | null = null;
+  private neon: NeonSigns | null = null;
+  private reflection: RiverReflection | null = null;
+  private rainNow = 0;
+  private wetNow = 0;
+  private frameDt = 0;
+  private gunSequence = -1;
+  private gunWeek = -1;
+  private chimneyTops: SmokeSource[] = [];
+  private vents: SmokeSource[] | null = null;
+  private fogRange = new THREE.Vector2(900, 2600);
+  private paveColor = new THREE.Color(1, 1, 1);
+  private paveRough = .94;
+  private smokeLight = new THREE.Color();
+  private smokeNight = 0;
+  private smokeWind = new THREE.Vector2(.9, .35);
+  private rainLight = new THREE.Color();
+  private rainCentre = new THREE.Vector3();
 
   constructor(canvas: HTMLCanvasElement, world: WorldState, deferConstruction = false) {
     this.world = world;
@@ -590,11 +620,23 @@ export class CityRenderer {
       () => this.buildAgents(),
       () => this.buildTraffic(),
       () => this.buildSelection(),
+      () => this.buildAtmosphere(),
       () => {this.cityEffects=new CityEffects(this.world,this.scene);this.burningPeople=new BurningPeople(this.scene);this.emergencyHoses=new EmergencyHoses(this.scene);this.carGunfire=new CarGunfire(this.scene);},
       () => this.refreshBuildings(),
       () => this.refreshStreet(),
       () => this.updateCamera(),
     ];
+  }
+
+  /** Rain, car lights, smoke and steam, neon, the river's reflection. */
+  private buildAtmosphere(): void {
+    this.rainFall = new RainFall(); this.scene.add(this.rainFall.mesh);
+    this.vehicleLights = new VehicleLights(MAX_CARS + 256);
+    for (const m of this.vehicleLights.meshes) this.scene.add(m);
+    this.smoke = new AmbientSmoke(); this.scene.add(this.smoke.mesh);
+    this.neon = new NeonSigns(); this.scene.add(this.neon.group);
+    this.reflection = new RiverReflection(.5);
+    this.reflection.setSize(this.width, this.height, this.renderer.getPixelRatio());
   }
 
   private finishConstruction(): void {
@@ -654,7 +696,8 @@ export class CityRenderer {
       const slabs = (SLAB_HALF * 2) / 6;
       this.paveTop.map = this.ownedTextures.replace(this.paveTop.map, art.pavement, slabs, slabs);
       // The photographed concrete is a cool, light grey: weather it to the city's warm stone.
-      this.paveTop.color.setRGB(.9, .87, .8);
+      this.paveColor.setRGB(.9, .87, .8);
+      this.paveTop.color.copy(this.paveColor);
       // Relief and wear: joints, pitting and smoother trodden slabs catch the low sun.
       if (art.pavementNormal) {
         this.paveTop.normalMap = this.ownedTextures.replace(this.paveTop.normalMap, art.pavementNormal, slabs, slabs);
@@ -662,7 +705,7 @@ export class CityRenderer {
       }
       if (art.pavementRoughness) {
         this.paveTop.roughnessMap = this.ownedTextures.replace(this.paveTop.roughnessMap, art.pavementRoughness, slabs, slabs);
-        this.paveTop.roughness = 1;
+        this.paveTop.roughness = this.paveRough = 1;
       }
       this.paveTop.needsUpdate = true;
     }
@@ -1463,6 +1506,7 @@ export class CityRenderer {
     // Window light on the pavement belongs to the main view only.
     if (!this.makingBuildingView) this.windowSpill?.reset();
     if (!this.makingBuildingView) this.roomCache = [];
+    if (!this.makingBuildingView) { this.chimneyTops = []; this.neon?.reset(); }
     this.footprints.clear();
     // The inset can temporarily rebuild different roofs; only the main view
     // owns the building-selection silhouette.
@@ -1476,7 +1520,7 @@ export class CityRenderer {
 
     if (this.buildingsRemoved) {
       for (const p of [...this.wallPools, ...this.cutawayWalls, ...this.decor]) p.commit();
-      if (!this.makingBuildingView) this.windowSpill?.commit();
+      if (!this.makingBuildingView) { this.windowSpill?.commit(); this.neon?.commit(); this.smoke?.setChimneys(this.chimneyTops); }
       if (!this.makingBuildingView) this.furnishNear(true);
       this.picks.mesh.boundingSphere = null;
       this.picks.mesh.boundingBox = null;
@@ -1717,6 +1761,15 @@ export class CityRenderer {
             1 - (row + 1) / tex.signs.rows,
           );
           this.signs.push(this.dummy.matrix, undefined, this.uvScratch);
+          // A neon blade sign at the end of the front, standing out over the pavement.
+          const neon = this.makingBuildingView ? null : neonWordFor(b.typeId, b.id);
+          if (neon && this.neon) {
+            const along = Math.max(0, m0.w / 2 - .55);
+            const [nx, nz] = local(signFront.x + along, signFront.z + NEON_BLADE.width / 2 + .08);
+            const [gx, gz] = local(signFront.x + along, signFront.z + 2.6);
+            const ny = KERB_H + Math.max(2.4 + NEON_BLADE.height / 2, Math.min(bh + .3 + NEON_BLADE.height / 2, m0.h - NEON_BLADE.height / 2 - .3));
+            this.neon.push(neon.word, neon.color, nx, ny, nz, yaw, gx, KERB_H + .02, gz, b.id);
+          }
         }
 
         if (prof.awning && !frontCut && !fireStage) {
@@ -1885,6 +1938,7 @@ export class CityRenderer {
             this.dummy.scale.set(.62, .38 + r01(b.id, 72 + k) * .26, .62);
             this.dummy.updateMatrix();
             this.chimneys.push(this.dummy.matrix);
+            if (!this.makingBuildingView) this.chimneyTops.push({ x: chx, y: roofY + 2.85 * this.dummy.scale.y, z: chz });
           }
           if (prof.roof === 'flat' && !prof.sawtooth && prof.height > STOREY_H * 2.5 && r01(b.id, 58) < 0.55) {
             const [bx, bz] = local(topMass.dx - topMass.w * 0.2, topMass.dz + topMass.d * 0.18);
@@ -1930,7 +1984,7 @@ export class CityRenderer {
 
     for (const p of [...this.wallPools, ...this.cutawayWalls]) p.commit();
     for (const p of this.decor) p.commit();
-    if (!this.makingBuildingView) this.windowSpill?.commit();
+    if (!this.makingBuildingView) { this.windowSpill?.commit(); this.neon?.commit(); this.smoke?.setChimneys(this.chimneyTops); }
     if (!this.makingBuildingView) this.furnishNear(true);
     this.rubbleModels?.setPlacements(rubblePlacements);
     // InstancedMesh caches these on its first raycast. Roof-mode and world
@@ -2483,6 +2537,7 @@ export class CityRenderer {
     this.motorcycles.reset();
     this.sculptModels?.resetVehicles();
     this.headlamps.reset();
+    this.vehicleLights?.reset();
     this.vehicleSprites?.reset(camera);
     const spriteMode = this.vehicleSpritesActive;
 
@@ -2508,6 +2563,11 @@ export class CityRenderer {
       else if (this.sculptModelsActive && this.sculptModels?.pushVehicle(truck ? 'truck' : 'coupe', this.dummy.matrix)) { /* Detailed vehicle */ }
       else (truck ? this.trucks : this.sedans).push(this.dummy.matrix, this.colorScratch);
 
+      if (this.vehicleLights || this.smoke) {
+        const { nose, lampY, length } = this.vehicleProfile(truck ? 'truck' : 'coupe');
+        this.vehicleLights?.push(x, VEHICLE_GROUND_CLEARANCE, z, yaw, nose, length / 2, lampY);
+        if (mainView && this.effects.smoke && Math.abs(x - carCx) < 70 && Math.abs(z - carCz) < 70) this.smoke?.exhaust(x, 0, z, yaw, length / 2, this.frameDt);
+      }
       if (dusk > 0.02) {
         const { nose, lampY } = this.vehicleProfile(truck ? 'truck' : 'coupe');
         this.dummy.position.set(x + Math.cos(yaw) * nose, lampY + VEHICLE_GROUND_CLEARANCE, z - Math.sin(yaw) * nose);
@@ -2537,6 +2597,11 @@ export class CityRenderer {
         this.vehicleSprites!.push(d.kind, d.x, d.z, d.facing - Math.PI / 2);
       else if (this.sculptModelsActive && this.sculptModels?.pushVehicle(d.kind, this.dummy.matrix)) { /* Detailed vehicle */ }
       else (d.kind === 'truck' ? this.trucks : d.kind === 'speedster' ? this.speedsters : this.sedans).push(this.dummy.matrix, this.colorScratch);
+      {
+        const { nose, lampY, length } = this.vehicleProfile(d.kind), yaw = d.facing - Math.PI / 2;
+        this.vehicleLights?.push(d.x, VEHICLE_GROUND_CLEARANCE, d.z, yaw, nose, length / 2, lampY, d.kind === 'motorcycle');
+        if (d.moving && mainView && this.effects.smoke && Math.abs(d.x - carCx) < 70 && Math.abs(d.z - carCz) < 70) this.smoke?.exhaust(d.x, 0, d.z, yaw, length / 2, this.frameDt);
+      }
       // The headlamp glow is a car's pair, a car's width apart; a motorcycle has one lamp.
       if (dusk > .02 && d.kind !== 'motorcycle') {
         const { nose, lampY } = this.vehicleProfile(d.kind);
@@ -2555,6 +2620,7 @@ export class CityRenderer {
     this.vehicleSprites?.commit();
     this.headlamps.commit();
     this.headlamps.mesh.visible = dusk > 0.02;
+    this.vehicleLights?.commit();
   }
 
   // ------------------------------------------------------------ public api
@@ -2749,6 +2815,7 @@ export class CityRenderer {
     if (ratio !== this.renderer.getPixelRatio()) this.renderer.setPixelRatio(ratio);
     this.renderer.setSize(this.width, this.height, false);
     this.nature?.setSize(this.width, this.height, this.renderer.getPixelRatio());
+    this.reflection?.setSize(this.width, this.height, this.renderer.getPixelRatio());
     this.clampTarget();
     this.updateCamera();
   }
@@ -3028,6 +3095,8 @@ export class CityRenderer {
         fog.near = 700 + viewH * 1.4;
         fog.far = 1700 + viewH * 5.5;
       }
+      this.fogRange.set(fog.near, fog.far);
+      this.applyRainFog();
     }
   }
 
@@ -3043,6 +3112,13 @@ export class CityRenderer {
     // six the city darkens under its lamps and lit windows (night).
     const dusk = smoothstep(0.7, 0.94, phase);
     const night = smoothstep(0.84, 1.0, phase);
+    // The weather (graphicsEffects.ts): rain comes and goes by the day; the
+    // ground stays wet for a while after it stops.
+    const day = this.world.week * DAYS_PER_WEEK + Math.floor((this.world.phase === 'week' ? this.world.minute : 0) / MINUTES_PER_DAY);
+    const rainMode = (this.effects ?? DEFAULT_EFFECTS).rain;
+    this.rainNow = rainAt(rainMode, day, phase);
+    this.wetNow = wetnessAt(rainMode, day, phase);
+    const overcast = Math.max(this.rainNow, this.wetNow * .35);
 
     // As in the original's pre-lit street view, the sun comes from the
     // viewer's upper left whichever way the camera faces: the wall on the left
@@ -3069,6 +3145,11 @@ export class CityRenderer {
     this.hemi.color.setRGB(lerp(0.55, 0.62, noon) - night * 0.12, lerp(0.6, 0.7, noon) - night * 0.08, lerp(0.78, 0.85, noon));
     // Match the gain-four horizontal direction; I * direction.y is unchanged.
     this.bounce.intensity = (0.15 + noon * 0.2) * (1 - night * 0.5) * (Math.hypot(720, 120, 560) / Math.hypot(180, 120, 140));
+    // Cloud: the sun goes behind it, the sky's flat light is greyer and a little stronger.
+    this.sun.intensity *= 1 - overcast * .7;
+    this.bounce.intensity *= 1 - overcast * .4;
+    this.hemi.intensity *= 1 + overcast * .15;
+    this.hemi.color.lerp(paintScratch.setRGB(.6, .62, .64), overcast * .6);
 
     // A sunset glow that comes with the dusk and fades into a deep blue night.
     const glow = dusk * (1 - night);
@@ -3077,6 +3158,7 @@ export class CityRenderer {
       lerp(0.06, 0.48, noon) + glow * 0.06,
       lerp(0.13, 0.56, noon) - glow * 0.06,
     );
+    sky.lerp(paintScratch.setScalar((sky.r + sky.g + sky.b) / 3 * .85), overcast * .75);
     (this.scene.background as THREE.Color).copy(sky);
     if (this.scene.fog) (this.scene.fog as THREE.Fog).color.copy(sky);
 
@@ -3096,9 +3178,10 @@ export class CityRenderer {
       const zenith = new THREE.Color().setRGB(
         lerp(0.015, 0.16, noon) + glow * 0.06, lerp(0.025, 0.32, noon) + glow * 0.02, lerp(0.07, 0.66, noon));
       const ground = new THREE.Color().setRGB(.16, .15, .13).multiplyScalar(lerp(.2, 1, noon) * (1 - night * .6));
-      const sunColor = this.sun.color.clone().multiplyScalar((1 - night * .85) * (1 + glow));
+      const sunColor = this.sun.color.clone().multiplyScalar((1 - night * .85) * (1 + glow) * (1 - overcast * .95));
       if (this.scene.fog) (this.scene.fog as THREE.Fog).color.copy(horizon);
-      this.nature.update(this.freeCamera, { zenith, horizon, ground, sunDir, sunColor, night }, lerp(.25, .7, noon) * (1 - night * .6) + night * .35);
+      zenith.lerp(horizon, overcast * .8);
+      this.nature.update(this.freeCamera, { zenith, horizon, ground, sunDir, sunColor, night: night * (1 - overcast) }, lerp(.25, .7, noon) * (1 - night * .6) + night * .35);
     } else this.nature?.rest();
 
     // Windows come on as the afternoon light goes.
@@ -3110,7 +3193,8 @@ export class CityRenderer {
     this.lampGlow.mesh.visible = dusk > 0.02;
     // The lamps light the street as the evening comes on.
     const lampLight = smoothstep(0.02, 0.9, dusk);
-    if (this.lampPoolMat) this.lampPoolMat.uniforms.strength.value = lampLight * .75;
+    // A wet street throws the lamplight back up.
+    if (this.lampPoolMat) this.lampPoolMat.uniforms.strength.value = lampLight * .75 * (1 + this.wetNow * .6);
     if (this.lampPools) this.lampPools.mesh.visible = lampLight > 0.01 && this.zoom > 0.75;
     this.streetLights?.update(this.target, lampLight);
     // Window light on the pavement follows the windows themselves.
@@ -3120,7 +3204,99 @@ export class CityRenderer {
     // A faint sheen on the roadway once the light goes flat.
     this.groundMat.roughness = 0.93 - dusk * 0.3;
     this.groundMat.metalness = 0.02 + dusk * 0.16;
+    if (this.rainFall) this.applyWeather(dusk, night, noon, lightUp, overcast);
     return dusk;
+  }
+
+  /** The optional effects' share of the time of day (once the atmosphere is built). */
+  private applyWeather(dusk: number, night: number, noon: number, lightUp: number, overcast: number): void {
+    // Wet streets: the road's shader darkens it and lays puddles; the pavement darkens and shines.
+    this.groundMat.roadWet.value = this.wetNow;
+    this.groundMat.roadRain.value = this.rainNow;
+    this.groundMat.roadTime.value = this.clock;
+    this.paveTop.color.copy(this.paveColor).multiplyScalar(1 - this.wetNow * .32);
+    this.paveTop.roughness = this.paveRough * (1 - this.wetNow * .5);
+    this.kerbSide.roughness = .9 - this.wetNow * .4;
+    this.applyRainFog();
+
+    // Car lights: on after dusk, and in heavy rain.
+    const carLights = this.effects.headlights ? Math.max(dusk, smoothstep(.4, .8, this.rainNow) * .6) : 0;
+    this.vehicleLights?.setStrength(carLights, this.wetNow);
+    this.neon?.update(this.clock, this.effects.neon ? lightUp : 0, 1 - night * .85, this.effects.neon);
+    this.landscape?.setWaterEffects(this.effects.water ? 1 : 0, this.rainNow);
+    // Rain lit by the sky by day and by the lamps at night.
+    this.rainLight.setRGB(.6, .64, .7).multiplyScalar(lerp(1, .5, night)).add(paintScratch.setRGB(.2, .15, .08).multiplyScalar(night));
+    this.smokeLight.setRGB(lerp(.35, 1, noon), lerp(.36, .98, noon), lerp(.42, .95, noon)).multiplyScalar(1 - overcast * .25);
+    this.smokeNight = night;
+  }
+
+  /** Rain closes the distance in: fog comes in near the camera. */
+  private applyRainFog(): void {
+    const fog = this.scene.fog as THREE.Fog | null;
+    if (!fog || !this.fogRange) return;
+    const r = this.rainNow;
+    if (this.freeView) {
+      fog.near = this.fogRange.x * (1 - .85 * r);
+      fog.far = this.fogRange.y * (1 - .6 * r);
+    } else {
+      fog.near = this.fogRange.x;
+      fog.far = this.fogRange.y * (1 - .2 * r);
+    }
+  }
+
+  /** Rain, smoke and steam, gun smoke: once a frame, after the time of day. */
+  private updateAtmosphere(dt: number): void {
+    const open = this.streetsOpen;
+    // Rain falls in a box round the view.
+    if (this.rainFall) {
+      if (this.freeView) {
+        const eye = this.freeCamera.position;
+        this.rainCentre.set((eye.x + this.target.x) / 2, Math.max(0, eye.y - 40), (eye.z + this.target.z) / 2);
+        const span = Math.min(260, Math.max(90, eye.distanceTo(this.target) * 1.4));
+        this.rainFall.update(this.rainCentre, span, Math.min(120, eye.y + 30), this.clock, open ? this.rainNow : 0, this.rainLight);
+      } else {
+        const span = Math.min(420, Math.max(80, this.groundReach() * 1.6));
+        this.rainFall.update(this.rainCentre.set(this.target.x, 0, this.target.z), span, 60, this.clock, open ? this.rainNow : 0, this.rainLight);
+      }
+    }
+    const smoke = this.smoke;
+    if (!smoke) return;
+    smoke.enabled = this.effects.smoke && open;
+    if (smoke.enabled) {
+      // Steam vents: about one street corner in five, set back from the crossing.
+      if (!this.vents) {
+        const vents: SmokeSource[] = [];
+        for (let i = 1; i < this.world.gridW; i++) for (let j = 1; j < this.world.gridH; j++) {
+          if (r01(i * 131 + j, 77) > .22) continue;
+          const x = i * CELL + (r01(i, j + 3) > .5 ? 3.2 : -3.2), z = j * CELL + (r01(j, i + 5) > .5 ? 1.6 : -1.6);
+          const y = streetSurfaceHeight(this.world, x, z);
+          if (y > -.5) vents.push({ x, y: y + .1, z });
+        }
+        this.vents = vents;
+        smoke.setVents(vents);
+      }
+      if (this.landscape) smoke.setMist(this.landscape.riverRects, RIVER_LEVEL);
+      // Gun smoke where shots are fired.
+      const stream = presentationEvents(this.world);
+      if (this.gunWeek !== this.world.week) { this.gunWeek = this.world.week; this.gunSequence = stream.sequence; }
+      for (const e of stream.events) {
+        if (e.sequence <= this.gunSequence || e.week !== this.world.week) continue;
+        if (e.kind !== 'attack' || !e.weapon || e.weapon === 'explosives') continue;
+        const p = this.world.people[e.actorId];
+        if (!p) continue;
+        const at = previewStreetPosition(p, this.world, this.subMinute, this.taggedPreview);
+        smoke.gunshot(at.x, streetSurfaceHeight(this.world, at.x, at.y) + (p.inVehicle ? 1.5 : 1.35), at.y);
+      }
+      this.gunSequence = stream.sequence;
+      this.smokeWind.set(.9 + this.rainNow * .8, .35);
+    }
+    smoke.update(dt, { x: this.target.x, z: this.target.z }, Math.min(220, this.groundReach() + 20),
+      { light: this.smokeLight, night: this.smokeNight, rain: this.rainNow, wind: this.smokeWind });
+  }
+
+  /** Which graphics effects are on (Options). */
+  setEffects(effects: GraphicsEffects): void {
+    this.effects = { ...effects };
   }
 
   /** Follow the street being viewed, including when no hood is selected. */
@@ -3197,6 +3373,7 @@ export class CityRenderer {
     const now = performance.now();
     const dt = this.lastFrame ? Math.min(0.1, (now - this.lastFrame) / 1000) : 0;
     this.lastFrame = now;
+    this.frameDt = dt;
     this.clock += dt;
     this.landscape?.updateWater(this.clock);
     this.simClock += dt * this.timeScale;
@@ -3256,6 +3433,7 @@ export class CityRenderer {
       this.buildingsDirty = false;
     }
     const dusk = this.applyTimeOfDay();
+    this.updateAtmosphere(dt);
     for (const [id, view] of this.tagged.views) {
       const watched = this.world.people[id];
       if (!watched) { this.tagged.views.delete(id); continue; }
@@ -3333,8 +3511,16 @@ export class CityRenderer {
     const nature = this.freeView ? this.nature : null;
     if (nature) nature.sky.visible = true;
     try {
-      if (nature && this.ambientOcclusion) {
-        nature.renderWithAO(this.freeCamera, renderer => this.buildingOutline.render(renderer, this.freeCamera));
+      // The city mirrored in the river (free view, when the river is in reach).
+      const water = this.landscape?.riverWater, riverMesh = this.landscape?.riverMesh;
+      if (this.reflection && water && riverMesh && nature && this.effects.water && this.riverInView()) {
+        this.reflection.bind(water.reflection);
+        this.reflection.render(this.renderer, this.scene, this.freeCamera, RIVER_LEVEL, [riverMesh, ...(this.rainFall ? [this.rainFall.mesh] : [])], 1);
+      } else this.reflection?.off();
+      const ao = !!nature && this.ambientOcclusion, film = this.effects.film;
+      if (this.nature && (ao || film)) {
+        const camera = this.camera;
+        this.nature.renderComposed(camera, renderer => this.buildingOutline.render(renderer, camera), { ao, film, time: this.clock });
       } else {
         this.renderer.render(this.scene, this.camera);
         this.buildingOutline.render(this.renderer, this.camera);
@@ -3372,6 +3558,14 @@ export class CityRenderer {
   /** How many fully animated figures the street may show at once (Options). */
   setDetailedPeople(count: number): void {
     this.detailedPeople = Math.max(8, Math.min(MAX_DETAILED_CHARACTERS, Math.round(count)));
+  }
+
+  /** Is any of the river within reach of the free view? */
+  private riverInView(): boolean {
+    const rects = this.landscape?.riverRects;
+    if (!rects?.length) return false;
+    const reach = this.groundReach(), tx = this.target.x, tz = this.target.z;
+    return rects.some(r => r.x < tx + reach && r.x + r.w > tx - reach && r.y < tz + reach && r.y + r.h > tz - reach);
   }
 
   /** Screen-space ambient occlusion in the free 3D view (Options). */
@@ -3600,6 +3794,11 @@ export class CityRenderer {
     // Release resources while the renderer still has its WebGL bookkeeping.
     this.ownedTextures.dispose();
     this.nature?.dispose();
+    this.reflection?.dispose();
+    this.rainFall?.dispose();
+    this.vehicleLights?.dispose();
+    this.smoke?.dispose();
+    this.neon?.dispose();
     this.sun?.shadow.dispose();
     this.vehicleSprites?.dispose();
     this.sculptModels?.dispose();

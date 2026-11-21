@@ -31,6 +31,10 @@ export class CityLandscape {
   private textures: THREE.Texture[] = [];
   private water?: PondWaterMaterial;
   private river?: PondWaterMaterial;
+  /** The river's open water (world metres; y is world z), for mist and reflections. */
+  riverRects: { x: number; y: number; w: number; h: number }[] = [];
+  /** The river's surface mesh (hidden from its own reflection). */
+  riverMesh: THREE.Mesh | null = null;
   private trains?: ElevatedTrains;
   private trams?: StreetTrams;
 
@@ -410,14 +414,24 @@ export class CityLandscape {
       box(15, p.x, (top + bottom) / 2, p.z, p.w, top - bottom, p.d);
     // The river's shading follows its whole channel: banks, bends and bridges.
     this.river?.setRiverMask(riverRects, w.gridW * CELL, w.gridH * CELL);
+    this.riverRects = riverRects.map(r => ({ x: r.x, y: r.y, w: r.w, h: r.h }));
     batches.forEach((batch, i) => {
       if (!batch.length) return;
       const geometry = mergeGeometries(batch); batch.forEach(g => g.dispose());
       if (!geometry) throw Error('Invalid landscape geometry');
       const mesh = new THREE.Mesh(geometry, materials[i]); mesh.receiveShadow = true;
       mesh.castShadow = [3, 4, 5, 6, 10, 11, 13, 15].includes(i); this.group.add(mesh);
+      if (i === 12) this.riverMesh = mesh;
     });
     if (cityTramLines(w).length) { this.trams = new StreetTrams(w); this.group.add(this.trams.group); }
+  }
+
+  /** The river's water material (its reflection uniforms), if this city has a river. */
+  get riverWater(): PondWaterMaterial | undefined { return this.riverMesh ? this.river : undefined; }
+
+  /** Foam along the walls (0/1) and rain rings (0..1) on the river and ponds. */
+  setWaterEffects(foam: number, rain: number): void {
+    for (const m of [this.water, this.river]) if (m) { m.waterFoam.value = foam; m.waterRain.value = rain; }
   }
 
   updateWater(seconds: number): void {

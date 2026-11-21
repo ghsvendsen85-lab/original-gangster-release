@@ -131,6 +131,7 @@ export function CityView() {
         renderer.setRoadNames(state.roadNames);
         renderer.setAmbientOcclusion(state.ambientOcclusion);
         renderer.setDetailedPeople(state.detailedPeople);
+        renderer.setEffects(state.effects);
 
         // A new week rebuilds the ground plan and the skyline.
         if (s.world.week !== lastWeek || s.world.phase !== lastPhase) {

@@ -1,4 +1,12 @@
 import * as THREE from 'three';
+import { FX_HASH_GLSL } from './graphicsEffects';
+
+/** The river's mirror image (riverReflection.ts writes these). */
+export interface ReflectionUniforms {
+  reflectionMap: { value: THREE.Texture | null };
+  reflectionMatrix: { value: THREE.Matrix4 };
+  reflectionStrength: { value: number };
+}
 
 export interface WaterRect { x: number; y: number; w: number; h: number }
 
@@ -20,6 +28,13 @@ export interface WaterRect { x: number; y: number; w: number; h: number }
  *   its reach runs, blended round the bends. */
 export class PondWaterMaterial extends THREE.MeshPhysicalMaterial {
   readonly waterTime = { value: 0 };
+  /** Foam along the embankment walls (0 off .. 1). */
+  readonly waterFoam = { value: 0 };
+  /** Rain rings on the surface (0 .. 1). */
+  readonly waterRain = { value: 0 };
+  readonly reflection: ReflectionUniforms = {
+    reflectionMap: { value: null }, reflectionMatrix: { value: new THREE.Matrix4() }, reflectionStrength: { value: 0 },
+  };
   private readonly mask = { value: blankMask() };
   private readonly maskRect = { value: new THREE.Vector4(0, 0, 1, 1) };
 
@@ -33,19 +48,31 @@ export class PondWaterMaterial extends THREE.MeshPhysicalMaterial {
       shader.uniforms.waterTime = this.waterTime;
       shader.uniforms.waterMask = this.mask;
       shader.uniforms.waterMaskRect = this.maskRect;
+      shader.uniforms.waterFoam = this.waterFoam;
+      shader.uniforms.waterRain = this.waterRain;
+      shader.uniforms.reflectionMap = this.reflection.reflectionMap;
+      shader.uniforms.reflectionMatrix = this.reflection.reflectionMatrix;
+      shader.uniforms.reflectionStrength = this.reflection.reflectionStrength;
       // Murky city water: dark green-teal mid-channel, olive-brown silt nearer the banks.
       shader.uniforms.waterDeep = { value: new THREE.Color(river ? 0x12221f : 0x15241f) };
       shader.uniforms.waterMurk = { value: new THREE.Color(river ? 0x263a31 : 0x34483a) };
       shader.uniforms.waterSilt = { value: new THREE.Color(river ? 0x3c3b28 : 0x45452f) };
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vWaterWorld;\nvarying vec2 vWaterUv;')
+        .replace('#include <common>', '#include <common>\nvarying vec3 vWaterWorld;\nvarying vec2 vWaterUv;\nvarying vec4 vReflCoord;\nuniform mat4 reflectionMatrix;')
         .replace('#include <begin_vertex>', `#include <begin_vertex>
           vWaterWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;
+          vReflCoord = reflectionMatrix * vec4(vWaterWorld, 1.0);
           vWaterUv = uv;`);
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', `#include <common>
           varying vec3 vWaterWorld;
           varying vec2 vWaterUv;
+          varying vec4 vReflCoord;
+          uniform sampler2D reflectionMap;
+          uniform float reflectionStrength;
+          uniform float waterFoam;
+          uniform float waterRain;
+          ${FX_HASH_GLSL}
           uniform float waterTime;
           uniform sampler2D waterMask;
           uniform vec4 waterMaskRect;
@@ -140,6 +167,14 @@ export class PondWaterMaterial extends THREE.MeshPhysicalMaterial {
 
           // Slicks are glassy, and the water stills right against the wall.
           wSlope *= (1.0 - wSlick * .65) * mix(.55, 1.0, wBand);
+          // Rain: rings from the drops, fading out where they would alias.
+          if (waterRain > 0.0) wSlope += fxRipples(wP, wT) * waterRain * (1.0 - smoothstep(.04, .12, wPx));${river ? `
+          // Foam and scum caught along the embankment walls, drifting.
+          if (waterFoam > 0.0) {
+            float wEdge = 1.0 - smoothstep(.5, .74, wMask.r);
+            float wFroth = smoothstep(.42, .78, wNoise(wP * 1.4 + vec2(-wT * .45, wT * .12)) * .7 + wNoise(wP * 4.1 + vec2(wT * .2, -wT * .5)) * .3);
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(.5, .5, .46), wEdge * wFroth * waterFoam * .7);
+          }` : ''}
         `)
         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
           roughnessFactor = mix(roughnessFactor, .1, wSlick);`)
@@ -167,11 +202,18 @@ export class PondWaterMaterial extends THREE.MeshPhysicalMaterial {
             float wClouds = wNoise(wCloud) * .6 + wNoise(wCloud * 2.6 + 4.1) * .4;
             wSky *= .7 + .6 * smoothstep(.3, .85, wClouds);
             // The walls hide the low sky from the water beneath them.
-            outgoingLight += wSky * wFresnel * (1.05 + wSlick * .6) * mix(.45, 1.0, wBand);
+            outgoingLight += wSky * wFresnel * (1.05 + wSlick * .6) * mix(.45, 1.0, wBand) * (1.0 - reflectionStrength * .8);${river ? `
+            // The city's mirror image, broken up by the ripples.
+            if (reflectionStrength > 0.0) {
+              vec2 wRUv = vReflCoord.xy / vReflCoord.w + wSlope * .05;
+              vec3 wRefl = texture2D(reflectionMap, wRUv).rgb;
+              float wRF = mix(.16, .66, pow(1.0 - wNV, 3.0)) * mix(.55, 1.0, wBand);
+              outgoingLight = mix(outgoingLight, wRefl * vec3(.78, .84, .8), wRF * reflectionStrength);
+            }` : ''}
           }
           #include <opaque_fragment>`);
     };
-    this.customProgramCacheKey = () => river ? 'river-water-v3' : 'park-pond-water-v3';
+    this.customProgramCacheKey = () => river ? 'river-water-v4' : 'park-pond-water-v4';
   }
 
   /** The river's channel, as the water rectangles of its blocks (world metres;

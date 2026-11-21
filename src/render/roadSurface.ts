@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { FX_HASH_GLSL } from './graphicsEffects';
 import { BLOCK_SIZE, CELL, PAVEMENT_OFFSET, STREET_WIDTH } from '../sim/constants';
 import { STREET_NAMES_EW, STREET_NAMES_NS } from '../sim/data/names';
 import { TextureOwner } from './textureOwnership';
@@ -93,6 +94,10 @@ export class RoadSurfaceMaterial extends THREE.MeshStandardMaterial {
   private readonly asphaltNormal: { value: THREE.Texture };
   private readonly asphaltRoughness: { value: THREE.Texture };
   readonly asphaltDetail = { value: 0 };
+  /** Rain: how wet the road is (darker, glossy, puddles in the low spots), how hard it is raining (rings), and the time. */
+  readonly roadWet = { value: 0 };
+  readonly roadRain = { value: 0 };
+  readonly roadTime = { value: 0 };
 
   constructor(overlay: THREE.Texture, owner: TextureOwner, fallback: HTMLCanvasElement, streetInset = 0, paveW = PAVE_W) {
     super({ map: overlay, roughness: .93, metalness: .02 });
@@ -144,6 +149,9 @@ export class RoadSurfaceMaterial extends THREE.MeshStandardMaterial {
       shader.uniforms.roadNormal = this.asphaltNormal;
       shader.uniforms.roadRoughness = this.asphaltRoughness;
       shader.uniforms.roadDetail = this.asphaltDetail;
+      shader.uniforms.roadWet = this.roadWet;
+      shader.uniforms.roadRain = this.roadRain;
+      shader.uniforms.roadTime = this.roadTime;
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nvarying vec2 vRoadPosition;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRoadPosition = (modelMatrix * vec4(position, 1.0)).xz;');
@@ -165,6 +173,11 @@ export class RoadSurfaceMaterial extends THREE.MeshStandardMaterial {
           uniform float roadDetail;
           uniform sampler2D riverBlocks;
           uniform float riverPlot;
+          uniform float roadWet;
+          uniform float roadRain;
+          uniform float roadTime;
+          float roadPuddle;
+          ${FX_HASH_GLSL}
           float lineName(float line, float row) {
             float i = clamp(line, 0.0, lineCount - 1.0);
             return floor(texture2D(lineNames, vec2((i + 0.5) / lineCount, row)).r * 255.0 + 0.5);
@@ -228,19 +241,36 @@ export class RoadSurfaceMaterial extends THREE.MeshStandardMaterial {
           // The strategic wash must tint the names and crossings as well as asphalt.
           vec3 painted = mix(roadColour, overlayPaint.rgb, overlayPaint.a);
           diffuseColor.rgb *= mix(painted / 12.92, pow((painted + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), painted));
+          // Wet road: darker all over, with puddles lying in the dips (more of
+          // them the longer it rains), and in the gutters by the kerb.
+          roadPuddle = 0.0;
+          if (roadWet > 0.0) {
+            float dip = fxNoise(vRoadPosition / 4.3) * .62 + fxNoise(vRoadPosition / 1.6 + 7.7) * .38;
+            float gutter = smoothstep(roadMaskFrom - .2, roadMaskFrom + 1.2, min(abs(streetOffset.x), abs(streetOffset.y)));
+            roadPuddle = smoothstep(.72 - roadWet * .22, .76 - roadWet * .2, dip + gutter * .25) * roadWet * (1.0 - step(0.5, avenueBlock) * .3);
+            diffuseColor.rgb *= mix(1.0, .74, roadWet) * mix(1.0, .8, roadPuddle);
+          }
         `)
         // Worn and patched asphalt: rougher aggregate, smoother tar seams
         // (they catch the evening sheen first).
         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-          roughnessFactor = clamp(roughnessFactor * mix(1.0, 0.62 + 0.55 * texture2D(roadRoughness, roadDetailUv).g, roadDetail), 0.04, 1.0);`)
+          roughnessFactor = clamp(roughnessFactor * mix(1.0, 0.62 + 0.55 * texture2D(roadRoughness, roadDetailUv).g, roadDetail), 0.04, 1.0);
+          roughnessFactor = mix(roughnessFactor, roughnessFactor * .42, roadWet);
+          roughnessFactor = mix(roughnessFactor, .03, roadPuddle);`)
         // The road is a flat, level plane: its tangent frame is the world axes
         // (u along +x, v along -z), so the relief needs no derivatives.
         .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
           vec3 roadBump = texture2D(roadNormal, roadDetailUv).xyz * 2.0 - 1.0;
           vec3 roadWorldNormal = normalize(vec3(roadBump.x * 0.9, roadBump.z, -roadBump.y * 0.9));
-          normal = normalize(mix(normal, normalize((viewMatrix * vec4(roadWorldNormal, 0.0)).xyz), roadDetail));`);
+          normal = normalize(mix(normal, normalize((viewMatrix * vec4(roadWorldNormal, 0.0)).xyz), roadDetail));
+          // A puddle is a level, still sheet; rain breaks it into rings.
+          if (roadPuddle > 0.0) {
+            vec2 ring = roadRain > 0.0 ? fxRipples(vRoadPosition, roadTime) * roadRain * (1.0 - smoothstep(.04, .12, length(fwidth(vRoadPosition)))) : vec2(0.0);
+            vec3 still = normalize((viewMatrix * vec4(-ring.x, 1.0, -ring.y, 0.0)).xyz);
+            normal = normalize(mix(normal, still, smoothstep(0.0, .5, roadPuddle)));
+          }`);
     };
-    this.customProgramCacheKey = () => 'og-road-detail-v8';
+    this.customProgramCacheKey = () => 'og-road-detail-v9';
   }
 
   override dispose(): void {

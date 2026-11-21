@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { DETAILED_PEOPLE_STEPS, SAVE_NAME_MAX, useGame } from '../../app/store';
+import { RAIN_MODES } from '../../render/graphicsEffects';
 import { slotLoadable } from '../../app/save';
 import { useSaveActions } from '../saveActions';
 import { cameraApi } from '../CityView';
@@ -68,6 +69,8 @@ export function OptionsTab() {
   const detailedPeople = useGame((s) => s.detailedPeople);
   const setDetailedPeople = useGame((s) => s.setDetailedPeople);
   const setAmbientOcclusion = useGame((s) => s.setAmbientOcclusion);
+  const effects = useGame((s) => s.effects);
+  const setEffects = useGame((s) => s.setEffects);
   const setAutoLowerRoofs = useGame((s) => s.setAutoLowerRoofs);
   const startGame = useGame((s) => s.startGame);
   const [quit, setQuit] = useState<null | 'restart' | 'fresh' | 'menu'>(null);
@@ -215,6 +218,29 @@ export function OptionsTab() {
         <div className="muted tiny" style={{ marginTop: 6 }}>
           The nearest people are fully modelled and animated; the rest of a crowd uses simple figures. More detailed people costs frame rate on busy streets.
         </div>
+        <div className="muted tiny" style={{ marginTop: 12 }}>Graphics effects</div>
+        <button className={`btn sm${effects.rain !== 'off' ? ' on' : ''}`} style={{ marginTop: 6 }}
+          onClick={() => setEffects({ rain: RAIN_MODES[(RAIN_MODES.indexOf(effects.rain) + 1) % RAIN_MODES.length] })}>
+          {effects.rain === 'off' ? 'Rain: never' : effects.rain === 'changing' ? 'Rain: changing weather' : 'Rain: always'}
+        </button>
+        <div className="muted tiny" style={{ marginTop: 6 }}>
+          Rain with wet, shining streets, puddles and fog. Changing weather rains on about one day in three.
+        </div>
+        {([
+          ['headlights', 'Headlights and tail lights', 'Beams of light on the road ahead of cars after dark.'],
+          ['water', 'River reflections and foam', 'The city mirrored in the river in the 3D view (costs frame rate), and foam along the walls.'],
+          ['smoke', 'Smoke and steam', 'Chimney smoke, steam from the street, exhaust, gun smoke and river mist.'],
+          ['neon', 'Neon signs', 'Neon over shops and cafés, lit after dusk.'],
+          ['film', 'Film look', 'Sepia grading, film grain and a vignette, like an old picture.'],
+        ] as const).map(([key, label, note]) => (
+          <div key={key}>
+            <button aria-pressed={effects[key]} className={`btn sm${effects[key] ? ' on' : ''}`} style={{ marginTop: 8 }}
+              onClick={() => setEffects({ [key]: !effects[key] })}>
+              {`${label}: ${effects[key] ? 'on' : 'off'}`}
+            </button>
+            <div className="muted tiny" style={{ marginTop: 6 }}>{note}</div>
+          </div>
+        ))}
         <InterfaceSize />
       </Panel>
 

@@ -4,6 +4,41 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { Pass } from 'three/examples/jsm/postprocessing/Pass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+
+/** A 1920s film look, after tone mapping: warm sepia grading, soft contrast, grain and a vignette. */
+const FilmShader = {
+  uniforms: { tDiffuse: { value: null }, time: { value: 0 }, amount: { value: 1 } },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */`
+    uniform sampler2D tDiffuse;
+    uniform float time, amount;
+    varying vec2 vUv;
+    float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+    void main() {
+      vec4 src = texture2D(tDiffuse, vUv);
+      vec3 c = src.rgb;
+      float luma = dot(c, vec3(.299, .587, .114));
+      // Sepia, keeping a little of the colour.
+      vec3 sepia = vec3(luma * 1.07, luma * .93, luma * .72);
+      vec3 graded = mix(c, sepia, .62);
+      // Lifted blacks and softened highlights, as on old print stock.
+      graded = graded * .9 + .045;
+      graded = mix(graded, smoothstep(0.0, 1.0, graded), .35);
+      // Grain that moves 24 times a second.
+      float frame = floor(time * 24.0);
+      float grain = hash(vUv * vec2(1931.0, 1423.0) + frame * 7.13) - .5;
+      graded += grain * .07;
+      // The odd flicker of the projector lamp.
+      graded *= 1.0 + (hash(vec2(frame, 3.1)) - .5) * .035;
+      // Vignette.
+      vec2 d = vUv - .5;
+      graded *= mix(1.0, .55, smoothstep(.32, .78, length(d * vec2(1.15, 1.0))));
+      gl_FragColor = vec4(mix(c, graded, amount), src.a);
+    }`,
+};
 
 /**
  * Natural light for the free 3D view (the isometric view keeps the original's
@@ -113,6 +148,8 @@ export class NaturalLight {
   private composer: EffectComposer | null = null;
   private renderPass: RenderPass | null = null;
   private aoPass: QuietGTAOPass | null = null;
+  private filmPass: ShaderPass | null = null;
+  private outputPass: OutputPass | null = null;
   private size = new THREE.Vector2(1, 1);
   private pixelRatio = 1;
 
@@ -190,10 +227,10 @@ export class NaturalLight {
   }
 
   /**
-   * Draw the main view with ambient occlusion: scene → outline → GTAO → tone mapping.
-   * Returns after drawing to the screen.
+   * Draw the main view through post-processing: scene → outline → (GTAO, free
+   * view only) → tone mapping → (film look). Returns after drawing to the screen.
    */
-  renderWithAO(camera: THREE.PerspectiveCamera, outline: (renderer: THREE.WebGLRenderer) => void): void {
+  renderComposed(camera: THREE.Camera, outline: (renderer: THREE.WebGLRenderer) => void, options: { ao: boolean; film: boolean; time: number }): void {
     if (!this.composer) {
       const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
       this.composer = new EffectComposer(this.renderer, target);
@@ -207,12 +244,22 @@ export class NaturalLight {
       this.aoPass.blendIntensity = .85;
       this.aoPass.hidden = [this.sky];
       this.composer.addPass(this.aoPass);
-      this.composer.addPass(new OutputPass());
+      this.outputPass = new OutputPass();
+      this.composer.addPass(this.outputPass);
+      this.filmPass = new ShaderPass(FilmShader);
+      this.composer.addPass(this.filmPass);
       this.composer.setPixelRatio(this.pixelRatio);
       this.composer.setSize(this.size.x, this.size.y);
     }
     this.renderPass!.camera = camera;
-    this.aoPass!.camera = camera;
+    const ao = options.ao && (camera as THREE.PerspectiveCamera).isPerspectiveCamera;
+    this.aoPass!.enabled = ao;
+    if (ao) this.aoPass!.camera = camera;
+    this.filmPass!.enabled = options.film;
+    this.filmPass!.uniforms.time.value = options.time;
+    // The last enabled pass draws to the screen.
+    this.outputPass!.renderToScreen = !options.film;
+    this.filmPass!.renderToScreen = options.film;
     this.composer.render();
   }
 
@@ -224,6 +271,8 @@ export class NaturalLight {
     this.envTarget?.dispose();
     this.pmrem.dispose();
     this.aoPass?.dispose();
+    this.filmPass?.dispose();
+    this.outputPass?.dispose();
     this.composer?.renderTarget1.dispose();
     this.composer?.renderTarget2.dispose();
     this.composer?.dispose();

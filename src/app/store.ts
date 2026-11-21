@@ -1,3 +1,4 @@
+import { DEFAULT_EFFECTS, normaliseEffects, type GraphicsEffects } from '../render/graphicsEffects';
 import { readTextureQuality, writeTextureQuality, type TextureQuality } from '../render/textureQuality';
 import { applyUiScale, readUiScale, writeUiScale } from './uiScale';
 import { applyLiveMovement } from '../sim/movement';
@@ -105,6 +106,9 @@ interface GameState {
   /** Fully animated people on the street at once (32 by default; more costs frame rate). */
   detailedPeople: number;
   setDetailedPeople: (count: number) => void;
+  /** Optional graphics effects: rain, car lights, water, smoke, neon, film look (each on its own switch). */
+  effects: GraphicsEffects;
+  setEffects: (effects: Partial<GraphicsEffects>) => void;
   /** The original's Mouse Reversal (Advanced Options): dragging moves the view the other way. */
   mouseReversal: boolean;
   /** Model texture quality; applies when the city next loads (A20). */
@@ -275,6 +279,10 @@ function readDetailedPeople(): number {
   } catch { return 32; }
 }
 
+function readEffects(): GraphicsEffects {
+  try { return normaliseEffects(JSON.parse(localStorage.getItem('og.effects') ?? 'null')); } catch { return { ...DEFAULT_EFFECTS }; }
+}
+
 function readAmbientOcclusion(): boolean {
   try { return localStorage.getItem('og.ambientOcclusion') !== '0'; } catch { return true; }
 }
@@ -325,6 +333,7 @@ export const useGame = create<GameState>((set, get) => ({
   roadNames: readRoadNames(),
   ambientOcclusion: readAmbientOcclusion(),
   detailedPeople: readDetailedPeople(),
+  effects: readEffects(),
   mouseReversal: readMouseReversal(),
   textureQuality: readTextureQuality(),
   uiScale: readUiScale(),
@@ -619,6 +628,11 @@ export const useGame = create<GameState>((set, get) => ({
   setAmbientOcclusion: (ambientOcclusion) => {
     try { localStorage.setItem('og.ambientOcclusion', ambientOcclusion ? '1' : '0'); } catch { /* session only */ }
     set({ ambientOcclusion });
+  },
+  setEffects: (changes) => {
+    const effects = normaliseEffects({ ...get().effects, ...changes });
+    try { localStorage.setItem('og.effects', JSON.stringify(effects)); } catch { /* session only */ }
+    set({ effects });
   },
   setDetailedPeople: (detailedPeople) => {
     try { localStorage.setItem('og.detailedPeople', String(detailedPeople)); } catch { /* session only */ }
