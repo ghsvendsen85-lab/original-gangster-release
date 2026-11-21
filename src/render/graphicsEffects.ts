@@ -1,3 +1,5 @@
+import { rainOnDay } from '../sim/weather';
+
 /**
  * Optional graphics effects (Options → Graphics effects). Each can be turned
  * off on its own; none changes the simulation.
@@ -37,42 +39,27 @@ export function normaliseEffects(raw: unknown): GraphicsEffects {
   return e;
 }
 
-function hash(n: number): number {
-  let x = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b);
-  x ^= x >>> 13; x = Math.imul(x, 0xc2b2ae35); x ^= x >>> 16;
-  return (x >>> 0) / 4294967296;
-}
-
-const smooth = (a: number, b: number, x: number) => {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-};
-
 /**
  * How hard it is raining (0..1) on `day` (any running count of days) at
  * `phase` (0..1 through the day). In 'changing' weather about one day in three
  * is wet: a shower that comes and goes, or a steady rain, at a time of its own.
  */
-export function rainAt(mode: RainMode, day: number, phase: number): number {
+export function rainAt(mode: RainMode, day: number, phase: number, seed = 0): number {
   if (mode === 'off') return 0;
   if (mode === 'always') return .85;
-  const d = Math.floor(day);
-  if (hash(d * 7 + 1) > .36) return 0;
-  const start = hash(d * 7 + 2) * .75, length = .18 + hash(d * 7 + 3) * .5;
-  const heavy = .55 + hash(d * 7 + 4) * .45;
-  const ramp = .05;
-  return heavy * smooth(start - ramp, start, phase) * (1 - smooth(start + length, start + length + ramp, phase));
+  // The simulation's own weather (it changes what witnesses see): drawn as it is.
+  return rainOnDay(day, phase, seed);
 }
 
 /** How wet the ground is: it follows the rain at once and dries off over a good part of the day. */
-export function wetnessAt(mode: RainMode, day: number, phase: number): number {
+export function wetnessAt(mode: RainMode, day: number, phase: number, seed = 0): number {
   let wet = 0;
   // Look back over the last third of a day: wetness is the strongest recent rain, fading.
   for (let k = 0; k <= 12; k++) {
     const back = k * .03;
     let p = phase - back, dd = day;
     if (p < 0) { p += 1; dd -= 1; }
-    wet = Math.max(wet, Math.min(1, rainAt(mode, dd, p) * 1.6) * (1 - back / .36));
+    wet = Math.max(wet, Math.min(1, rainAt(mode, dd, p, seed) * 1.6) * (1 - back / .36));
   }
   return wet;
 }

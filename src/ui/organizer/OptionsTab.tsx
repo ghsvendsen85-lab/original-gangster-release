@@ -221,10 +221,10 @@ export function OptionsTab() {
         <div className="muted tiny" style={{ marginTop: 12 }}>Graphics effects</div>
         <button className={`btn sm${effects.rain !== 'off' ? ' on' : ''}`} style={{ marginTop: 6 }}
           onClick={() => setEffects({ rain: RAIN_MODES[(RAIN_MODES.indexOf(effects.rain) + 1) % RAIN_MODES.length] })}>
-          {effects.rain === 'off' ? 'Rain: never' : effects.rain === 'changing' ? 'Rain: changing weather' : 'Rain: always'}
+          {effects.rain === 'off' ? 'Rain: not shown' : effects.rain === 'changing' ? 'Rain: shown as it falls' : 'Rain: always (looks only)'}
         </button>
         <div className="muted tiny" style={{ marginTop: 6 }}>
-          Rain with wet, shining streets, puddles and fog. Changing weather rains on about one day in three.
+          Rain with wet, shining streets, puddles and fog. The weather is part of the game whatever is drawn: rain and darkness hide crimes from witnesses. Changing weather shows it as it falls (about one day in three); never hides it; always draws rain all the time.
         </div>
         {([
           ['headlights', 'Headlights and tail lights', 'Beams of light on the road ahead of cars after dark.'],

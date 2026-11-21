@@ -1,3 +1,4 @@
+import { visibilityNow } from './weather';
 import { fearOf, hostilityOf, NO_ORIGINAL_CHANNEL, opinionSet } from './attitudes';
 import { INCIDENT_HOSTILITY, provoke } from './aiStance';
 import { cityBlockAt } from './cityLayout';
@@ -124,7 +125,9 @@ export function recordCrime(w: WorldState, rng: Rng, params: CrimeParams): Crime
   // assault or a smash-up against himself.
   const suppressed = original && victim?.role === 'owner' && OWNER_SILENT.has(params.type);
   // Original sweep: 5 cells outdoors, 3 indoors; the remake's 46/22 otherwise.
-  const radius = original ? (params.buildingId != null ? 3 : 5) * ORIGINAL_CELL_METRES : params.isPublic ? 46 : 22;
+  // In the dark and the rain fewer people are near enough to see, and those who are notice less (weather.ts).
+  const visibility = visibilityNow(w);
+  const radius = (original ? (params.buildingId != null ? 3 : 5) * ORIGINAL_CELL_METRES : params.isPublic ? 46 : 22) * (.55 + .45 * visibility);
 
   const seen = suppressed ? [] : witnessesNear(w, params.pos, radius, [params.perpetratorId]);
   const witnesses: ID[] = [];
@@ -144,7 +147,7 @@ export function recordCrime(w: WorldState, rng: Rng, params: CrimeParams): Crime
     if (s.role === 'police' && (onGangPayroll(s, params.gangId) || s.bribedBy === params.gangId) && severity < 9) continue;
     // Stealthy hoods are simply not noticed; the police notice most things.
     const noticeChance =
-      (s.role === 'police' ? 0.85 : 0.3 + severity * 0.045) * (1 - (stealth - 0.5) * 0.12);
+      (s.role === 'police' ? 0.85 : 0.3 + severity * 0.045) * (1 - (stealth - 0.5) * 0.12) * (.4 + .6 * visibility);
     if (rng.chance(Math.max(0.02, noticeChance))) witnesses.push(s.id);
   }
 
@@ -154,6 +157,8 @@ export function recordCrime(w: WorldState, rng: Rng, params: CrimeParams): Crime
     const found = civilians.slice(0, 6).map(p => p.id);
     for (let shed = Math.floor(found.length * skillByte(stealth) / 64); shed > 0; shed--) found.splice(rng.int(0, found.length - 1), 1);
     while (found.length > 4) found.splice(rng.int(0, found.length - 1), 1);
+    // Who could make out a face in the dark or the rain (the farthest are lost first).
+    if (visibility < 1) found.length = Math.min(found.length, Math.ceil(found.length * visibility));
     witnesses.push(...found);
   }
 

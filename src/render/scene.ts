@@ -3121,8 +3121,9 @@ export class CityRenderer {
     // ground stays wet for a while after it stops.
     const day = this.world.week * DAYS_PER_WEEK + Math.floor((this.world.phase === 'week' ? this.world.minute : 0) / MINUTES_PER_DAY);
     const rainMode = (this.effects ?? DEFAULT_EFFECTS).rain;
-    this.rainNow = rainAt(rainMode, day, phase);
-    this.wetNow = wetnessAt(rainMode, day, phase);
+    const seed = this.world.options?.seed ?? 0;
+    this.rainNow = rainAt(rainMode, day, phase, seed);
+    this.wetNow = wetnessAt(rainMode, day, phase, seed);
     const overcast = Math.max(this.rainNow, this.wetNow * .35);
 
     // As in the original's pre-lit street view, the sun comes from the

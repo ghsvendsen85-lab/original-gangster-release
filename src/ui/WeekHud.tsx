@@ -22,6 +22,7 @@ import { previewPosition } from '../sim/movement';
 import { allocateWeapons } from '../sim/weapons';
 import { streetLocation } from '../sim/cityLayout';
 import { dayIndex } from '../sim/world';
+import { weatherWords } from '../sim/weather';
 import { VIEW_ZOOM, viewForZoom, type CityViewMode } from '../render/viewModes';
 import { cameraApi } from './CityView';
 import { Icon } from './common';
@@ -109,7 +110,7 @@ export function WeekHud() {
       <div className="week-titlebar">
         <button className="week-exit" onClick={()=>state().setQuitPrompt(true)} title="Exit to the main menu (Ctrl+Q)">Exit</button>
         <span>Working week <b>{w.week}</b></span>
-        <span className="week-status">{paused?'Paused':finishing?'Finishing week':`${WEEK_DAYS[dayIndex(w.minute)]} · ${weekTime(w.minute)}`}</span>
+        <span className="week-status">{paused?'Paused':finishing?'Finishing week':`${WEEK_DAYS[dayIndex(w.minute)]} · ${weekTime(w.minute)} · ${weatherWords(w)}`}</span>
         <span className="week-place" title={place}>{place}</span>
         <span className="week-cash">Cash <b><MoneyRoll value={gang.cash} /></b></span>
       </div>
