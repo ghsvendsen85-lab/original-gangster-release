@@ -44,6 +44,9 @@ import {
   stopBusinessGuards,
   fitsWeek,
   weekCharge,
+  committedWeek,
+  elapsedWeek,
+  startUrgentOrder,
 } from './execution';
 import { defect } from './systems/economy';
 import { campaignWeeklyCost, officeEntryCheck, enterElection, withdrawFromElection } from './systems/politics';
@@ -302,7 +305,7 @@ export function issueOrder(w: WorldState, gangId: ID, input: IssueOrderInput): A
     const his = team.orderIds.map((id) => w.orders[id]).filter((o) => o && o.id !== input.replacingOrderId && o.state === 'queued' &&
       !ORDERS[o.type].wholeWeek && o.opts.preferredHoodId === opts.preferredHoodId)
       .reduce((sum, o) => sum + o.estimatedMinutes, 0);
-    if (his + order.estimatedMinutes > MINUTES_PER_WEEK * 1.02)
+    if (elapsedWeek(w) + his + order.estimatedMinutes > MINUTES_PER_WEEK * 1.02)
       return fail(`${w.people[opts.preferredHoodId]?.name ?? 'That person'} has not got the time for another job this week. Send somebody else, or let the lieutenant choose.`);
   }
 
@@ -322,14 +325,21 @@ export function issueOrder(w: WorldState, gangId: ID, input: IssueOrderInput): A
         }
       }
     }
-    return fail(
-      `${lt.name} has not got the time. Reduce the area, add manpower, or leave it until next week.`,
+    return fail(w.phase === 'week'
+      ? `${lt.name} has not got the time left this week. Reduce the area, add manpower, or leave it until next week.`
+      : `${lt.name} has not got the time. Reduce the area, add manpower, or leave it until next week.`,
     );
   }
   order.id = newId(w);
   w.orders[order.id] = order;
   team.orderIds.push(order.id);
-  team.timeUsed += charge;
+  // During the working week the crew's time starts from now.
+  team.timeUsed = committedWeek(w, team.timeUsed) + charge;
+  if (w.phase === 'week' && opts.urgent) {
+    if (startUrgentOrder(w, team, order)) return ok(`${lt.name} drops everything for it.`);
+    return ok(`${lt.name} accepted the urgent order; it starts as soon as the crew can field the people.`);
+  }
+  if (w.phase === 'week') return ok(`${lt.name} accepted the order. It is queued behind the crew's other jobs.`);
   if (w.options.tutorialId === 4 && gang.isPlayer && input.type === 'explore') {
     // Capture the target's allegiance when the order is accepted: territory
     // may change before the lesson card is next shown or the save is loaded.
@@ -401,7 +411,7 @@ export const CENTRE_LOT_NEEDS_FRONT = 'Buy a business on this block first: the l
 /** Replace a queued job only after the revised job passes the usual validation. */
 export function replaceOrder(w: WorldState, gangId: ID, orderId: ID, input: IssueOrderInput): ApiResult {
   const old = w.orders[orderId], team = w.teams[input.teamId];
-  if (!old || old.gangId !== gangId || old.teamId !== input.teamId || old.state !== 'queued' || w.phase !== 'planning' || !team)
+  if (!old || old.gangId !== gangId || old.teamId !== input.teamId || old.state !== 'queued' || w.phase === 'gameOver' || !team)
     return fail('Only a queued order can be edited.');
   const committed = team.timeUsed, index = team.orderIds.indexOf(orderId);
   team.timeUsed = Math.max(0, committed - weekCharge(w, team, old));

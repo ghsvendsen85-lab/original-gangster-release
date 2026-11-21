@@ -430,6 +430,8 @@ export function estimateMinutes(w: WorldState, team: Team, order: Order): number
  * balanced against it.
  */
 export function weekCharge(w: WorldState, team: Team, order: Pick<Order, 'type' | 'opts' | 'estimatedMinutes'>): number {
+  // Given during the working week, a standing order only has what is left of it.
+  if (ORDERS[order.type].wholeWeek && w.phase === 'week') return Math.min(order.estimatedMinutes, Math.max(0, MINUTES_PER_WEEK - w.minute));
   if (ORDERS[order.type].wholeWeek || !w.gangs[team.gangId]?.isPlayer) return order.estimatedMinutes;
   const bodies = Math.max(1, crewPeople(w, team).filter(p => readyForPlanning(w, p)).length);
   return Math.round(order.estimatedMinutes * Math.min(bodies, Math.max(1, order.opts.manpower)) / bodies);
@@ -445,8 +447,51 @@ export const WEEK_BUDGET = MINUTES_PER_WEEK * 1.02;
  * much however many others stand idle).
  */
 export function fitsWeek(w: WorldState, team: Team, order: Pick<Order, 'type' | 'opts' | 'estimatedMinutes'>, committed: number): boolean {
-  if (!ORDERS[order.type].wholeWeek && order.estimatedMinutes > WEEK_BUDGET) return false;
-  return committed + weekCharge(w, team, order) <= WEEK_BUDGET;
+  const now = elapsedWeek(w);
+  if (!ORDERS[order.type].wholeWeek && order.estimatedMinutes > WEEK_BUDGET - now) return false;
+  return committedWeek(w, committed) + weekCharge(w, team, order) <= WEEK_BUDGET;
+}
+
+/** How much of the working week has gone (0 while planning). */
+export function elapsedWeek(w: WorldState): number {
+  return w.phase === 'week' ? Math.max(0, w.minute) : 0;
+}
+
+/**
+ * A crew's week spoken for: what it has been given, and during the working
+ * week never less than the time already gone (an order given on Thursday
+ * cannot use Monday).
+ */
+export function committedWeek(w: WorldState, committed: number): number {
+  return Math.max(committed, elapsedWeek(w));
+}
+
+/**
+ * An urgent order given during the working week: the crew drops what it is
+ * doing and starts it at once. Those taken off another order go back to it
+ * when this one is over (as after a street order); a crew that cannot field
+ * the people even so leaves it queued.
+ */
+export function startUrgentOrder(w: WorldState, team: Team, order: Order): boolean {
+  if (w.phase !== 'week' || order.state !== 'queued') return false;
+  // Free everyone on an ordinary job for the moment; standing orders (guards,
+  // businesses run all week) and men already pulled off a job stay put.
+  const lent = new Map<ID, ID>();
+  for (const p of crewPeople(w, team)) {
+    const current = p.orderId != null ? w.orders[p.orderId] : null;
+    if (!current || current.id === order.id || ORDERS[current.type].wholeWeek || current.opts.urgent || p.resumeOrderId != null || p.streetOrder) continue;
+    lent.set(p.id, current.id);
+    p.orderId = null;
+  }
+  const started = assignOrder(w, team, order);
+  for (const [id, previous] of lent) {
+    const p = w.people[id];
+    if (!p) continue;
+    if (started && p.orderId === order.id) p.resumeOrderId = previous;
+    else p.orderId = previous;
+  }
+  if (started) report(w, order.gangId, 'waiting', `Urgent: ${ORDERS[order.type].name} — the crew has dropped what it was doing.`);
+  return started;
 }
 
 // ---------------------------------------------------------------- week start

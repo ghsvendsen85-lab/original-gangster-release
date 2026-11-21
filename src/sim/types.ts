@@ -465,6 +465,9 @@ export interface OrderOptions {
   frontBuildingId?: ID;
   /** donate / bribe: money committed. */
   amount?: number;
+  /** Given during the working week: the crew drops what it is doing and starts
+   * this at once, going back to the interrupted job afterwards. */
+  urgent?: boolean;
   /** recruit: only the haunts of this kind of recruit. Absent (older saves,
    * the computer's gangs) takes whoever each place has. */
   recruitKind?: 'hood' | 'accountant' | 'lawyer';

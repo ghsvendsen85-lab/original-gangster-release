@@ -5,7 +5,7 @@ import { crewsAlreadySent, defaultOptions, issueOrder, previewOrder, replaceOrde
 import { selectableOrderPerson, selectableOrderSite } from '../app/orderSelection';
 import { MINUTES_PER_WEEK, ORDERS, ORDER_GROUPS, clockMinutes } from '../sim/constants';
 import { BUILDING_BY_ID, ILLEGAL_TYPES, ESTABLISHABLE_TYPES, coverQuality } from '../sim/data/buildings';
-import { buildingValue, expandTargets, fitsWeek, weekCharge } from '../sim/execution';
+import { buildingValue, committedWeek, expandTargets, fitsWeek, weekCharge } from '../sim/execution';
 import { SKILL_LABELS, type ID } from '../sim/types';
 import { donationAmount } from '../sim/charity';
 import { crewHasFirearm, crewPeople, orderStaffing, readyForPlanning } from '../sim/orderStaffing';
@@ -132,7 +132,7 @@ export function JobCardPanel() {
   const dispatchIssue = staffing?.reason ?? (jc.type==='export'&&!team?.vehicles.truck ? 'Allocate a truck to this crew to export goods.' : null);
   const estimate = draft ? (clockMinutes(draft.estimatedMinutes) / 60).toFixed(1) + 'h estimated crew time' : 'Choose a crew';
   // The crew's week is its people's time: a job for one man of five takes a fifth of what it would with all five on it.
-  const committed = Math.max(0, (team?.timeUsed ?? 0) - (team && previous ? weekCharge(w, team, previous) : 0));
+  const committed = committedWeek(w, Math.max(0, (team?.timeUsed ?? 0) - (team && previous ? weekCharge(w, team, previous) : 0)));
   const charge = team && draft ? weekCharge(w, team, draft) : 0;
   const exceedsBudget = !!team && !!draft && !fitsWeek(w, team, draft, committed);
 
@@ -374,6 +374,11 @@ export function JobCardPanel() {
               <button aria-pressed={!!jc.opts.priority} className={`chip${jc.opts.priority ? ' on' : ''}`} title="Priority orders avoid combat and ignore the police to get the job done." onClick={() => updateOpts({ priority: !jc.opts.priority })}>
                 Priority
               </button>
+              {w.phase === 'week' && (
+                <button aria-pressed={!!jc.opts.urgent} className={`chip${jc.opts.urgent ? ' on' : ''}`} title="The crew drops what it is doing and starts this now; the job it was on carries on afterwards. Without it, the order waits its turn in the queue." onClick={() => updateOpts({ urgent: !jc.opts.urgent })}>
+                  Urgent
+                </button>
+              )}
               <button aria-pressed={!!jc.opts.wait} className={`chip${jc.opts.wait ? ' on' : ''}`} title="They will hold in position until you tell them to continue." onClick={() => updateOpts({ wait: !jc.opts.wait })}>
                 Wait
               </button>

@@ -127,6 +127,10 @@ interface GameState {
 
   speed: number;
   paused: boolean;
+  /** The Organizer opened during a paused working week, to give orders (they queue, or start at once if urgent). */
+  weekOrders: boolean;
+  openWeekOrders: () => void;
+  closeWeekOrders: () => void;
   finishingWeek: boolean;
   savingToQuit: boolean;
   /** The menu's attract mode: an autopilot city that is never saved or scored. */
@@ -308,7 +312,7 @@ function freshWorldUi() {
     selectedStreetIds: [] as ID[], policeAreaBlockIds: [] as ID[], reviewOrderId: null,
     helpOpen: false, quitPrompt: false, jobCard: null, specialistCard: null, pickMode: null, messageBox: null,
     overlays: ['territory'] as OverlayKind[], organizerCollapsed: false,
-    sheet: null, planningView: 'plan' as const, speed: 1, paused: false,
+    sheet: null, planningView: 'plan' as const, speed: 1, paused: false, weekOrders: false,
     finishingWeek: false, savingToQuit: false, savingSnapshot: false, loadingSave: null, streetLoading: false, messageOverride: false, toast: null, cameraRequest: null,
   };
 }
@@ -348,6 +352,7 @@ export const useGame = create<GameState>((set, get) => ({
 
   speed: 1,
   paused: false,
+  weekOrders: false,
   finishingWeek: false,
   savingToQuit: false,
   attract: false,
@@ -656,7 +661,7 @@ export const useGame = create<GameState>((set, get) => ({
 
   toggleOverlay: (o) => {
     const { overlays: cur, sim, pickMode, selectedTeamId, jobCard, specialistCard } = get();
-    if (o === 'lieutenant' && sim?.world.phase === 'planning' && !jobCard && !specialistCard) {
+    if (o === 'lieutenant' && (sim?.world.phase === 'planning' || sim?.world.phase === 'week' && get().weekOrders) && !jobCard && !specialistCard) {
       if (pickMode?.kind === 'lieutenantArea') {
         set({ pickMode: null, overlays: cur.filter(id => id !== 'lieutenant') });
         return;
@@ -790,7 +795,16 @@ export const useGame = create<GameState>((set, get) => ({
     if (get().savingToQuit || get().savingSnapshot) return;
     if (get().finishingWeek) get().cancelFinishWeek();
     else set({ paused });
+    // Resuming the week puts the order book away.
+    if (!paused && get().weekOrders) get().closeWeekOrders();
   },
+  openWeekOrders: () => {
+    const { sim, finishingWeek, streetLoading, paused } = get();
+    // Orders are given with the week stopped.
+    if (!sim || sim.world.phase !== 'week' || finishingWeek || streetLoading || !paused) return;
+    set({ weekOrders: true, organizerTab: 'lieutenants', organizerCollapsed: false, planningView: 'city', jobCard: null, specialistCard: null, pickMode: null, sheet: null });
+  },
+  closeWeekOrders: () => set({ weekOrders: false, jobCard: null, specialistCard: null, pickMode: null, sheet: null, organizerCollapsed: false }),
   toggleMessageFilter: (c) =>
     set({ messageFilter: { ...get().messageFilter, [c]: !get().messageFilter[c] } }),
   toggleMessageOverride: () => set({ messageOverride: !get().messageOverride }),

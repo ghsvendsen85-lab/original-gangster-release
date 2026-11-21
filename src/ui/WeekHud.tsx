@@ -115,6 +115,9 @@ export function WeekHud() {
         <div className="interface-control-group">
           <InterfaceButton label={paused&&!finishing?'Resume':'Pause'} icon={paused&&!finishing?'hud/play':'hud/pause'} caption={paused&&!finishing?'Resume':'Pause'} aria-pressed={paused&&!finishing}
             title={finishing?'Stop skipping and pause (P)':paused?'Resume (P)':'Pause (P)'} onClick={()=>finishing?state().cancelFinishWeek():state().setPaused(!paused)}/>
+          <InterfaceButton label="Orders" icon="tabs/lieutenants" caption="Orders" disabled={!paused||finishing}
+            title={paused&&!finishing?'Give your crews new orders: they join the queue, or start at once if urgent':'Pause the week first (P) to give new orders'}
+            onClick={()=>state().openWeekOrders()}/>
           <InterfaceButton label="Help" glyph="?" caption="Help" onClick={()=>state().setHelpOpen(true)}/>
           <InterfaceButton label="City Plan View" icon="tabs/maps" caption="City plan" aria-pressed={view==='plan'} title="City Plan View (Insert)" onClick={()=>zoom('plan')}/>
           <InterfaceButton label="Rooftop View" glyph="▱" caption="Rooftop" aria-pressed={view==='roof'} title="Rooftop View (Home)" onClick={()=>zoom('roof')}/>

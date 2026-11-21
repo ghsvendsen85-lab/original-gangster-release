@@ -251,14 +251,16 @@ export function LieutenantsTab() {
                         {o.opts.manpower > 1 && ` · ${o.opts.manpower} men`}
                         {o.opts.repeat && ' · repeats'}
                         {o.opts.priority && ' · priority'}
+                        {o.opts.urgent && ' · urgent'}
+                        {o.state !== 'queued' && <span className="muted"> · {o.state === 'done' ? 'done' : o.state === 'failed' ? 'failed' : 'under way'}</span>}
                         {o.opts.wait && ' · waits'}
                         <span className="muted"> · {hours(o.estimatedMinutes)}</span>
                         {o.dispatchWaitReason && <span className="muted"> · Queued: {o.dispatchWaitReason}</span>}
                       </span>
                       <span className="row" style={{ gap: 4 }}>
-                        <button className="btn sm" onClick={() => editOrder(o)} title="Open the job card again">
+                        {o.state === 'queued' && <button className="btn sm" onClick={() => editOrder(o)} title="Open the job card again">
                           Edit
-                        </button>
+                        </button>}
                         <button className="btn sm red-text" aria-label={`Cancel ${ORDERS[o.type].name}`} onClick={() => notify(act((s) => cancelOrder(s.world, o.id))!)} title="Cancel this order">
                           ×
                         </button>

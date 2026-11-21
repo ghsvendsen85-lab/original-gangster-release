@@ -18,6 +18,7 @@ export function GameScreen() {
   const jobCard = useGame((s) => s.jobCard);
   const staff = useGame(s => s.specialistCard);
   const pickMode = useGame((s) => s.pickMode);
+  const weekOrders = useGame((s) => s.weekOrders);
   const planningView = useGame((s) => s.planningView);
   const helpOpen = useGame((s) => s.helpOpen);
   const setHelpOpen = useGame((s) => s.setHelpOpen);
@@ -43,6 +44,8 @@ export function GameScreen() {
 
   if (!sim) return null;
   const planning = sim.world.phase === 'planning';
+  // Giving orders mid-week (paused) uses the planning desk over the stopped street.
+  const ordering = planning || (weekOrders && sim.world.phase === 'week');
   if (attract) return <div className="game-shell working-interface attract-shell"><CityView /><AttractMode /></div>;
 
   const hint = (() => {
@@ -63,16 +66,16 @@ export function GameScreen() {
   })();
 
   return (
-    <div className={`game-shell ${planning?'planning-interface':'working-interface'}`} onPointerDown={() => audio.ensure()}>
+    <div className={`game-shell ${ordering?'planning-interface':'working-interface'}`} onPointerDown={() => audio.ensure()}>
       <CityView />
-      {planning && planningView === 'plan' && <Blueprint />}
+      {ordering && planningView === 'plan' && <Blueprint />}
 
-      {planning ? <Organizer /> : <WeekHud />}
-      {planning && !jobCard && !staff && <BuildingPanel />}
-      {!planning && <BuildingPanel />}
+      {ordering ? <Organizer midWeek={!planning} /> : <WeekHud />}
+      {ordering && !jobCard && !staff && <BuildingPanel />}
+      {!ordering && <BuildingPanel />}
 
       {(savingToQuit || savingSnapshot) && !streetLoading && <div className="modal-back" role="status"><div className="paper sheet">Saving your city…</div></div>}
-      {hint && !jobCard && !staff && !(planning && planningView === 'plan' && pickMode?.kind === 'lieutenantArea') && <div className="paper hint-pill">{hint}</div>}
+      {hint && !jobCard && !staff && !(ordering && planningView === 'plan' && pickMode?.kind === 'lieutenantArea') && <div className="paper hint-pill">{hint}</div>}
       {helpOpen && <HelpSheet onClose={() => setHelpOpen(false)} />}
       {quitPrompt && (
         <ConfirmDialog

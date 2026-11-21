@@ -48,7 +48,8 @@ const MAP_OVERLAYS: { id: OverlayKind; label: string }[] = [
  * The manual's Organizer hierarchy: all eight sections across the top,
  * lieutenant details and orders on the left, map/resources on the right.
  */
-export function Organizer() {
+/** `midWeek`: opened during a paused working week to give orders (Lieutenants only). */
+export function Organizer({ midWeek = false }: { midWeek?: boolean } = {}) {
   const jobCard = useGame(s => s.jobCard);
   const staff = useGame(s => s.specialistCard);
   const selectedTeamId = useGame(s => s.selectedTeamId);
@@ -184,18 +185,21 @@ export function Organizer() {
   const wages = Object.values(w.people)
     .filter((p) => p.gangId === gang.id && p.role !== 'boss' && p.status !== 'dead')
     .reduce((s, p) => s + p.pay, 0);
-  const withStrip = tab === 'lieutenants' && !jobCard && !staff;
+  // Mid-week the order book is the Lieutenants page; the rest waits for Monday.
+  const tabs = midWeek ? TABS.filter(t => t.id === 'lieutenants') : TABS;
+  const shownTab: OrganizerTab = midWeek ? 'lieutenants' : tab;
+  const withStrip = shownTab === 'lieutenants' && !jobCard && !staff;
 
   return (
     <>
       <div className="organizer-frame">
         <div className="journal-tabs" role="tablist" aria-label="Organizer sections">
-          {TABS.map((t) => (
-            <button key={t.id} role="tab" tabIndex={tab === t.id ? 0 : -1} onKeyDown={e => {
-              const i = TABS.findIndex(x => x.id === t.id);
-              const next = e.key === "ArrowRight" ? (i + 1) % TABS.length : e.key === "ArrowLeft" ? (i + TABS.length - 1) % TABS.length : e.key === "Home" ? 0 : e.key === "End" ? TABS.length - 1 : -1;
-              if (next >= 0) { e.preventDefault(); setTab(TABS[next].id); (e.currentTarget.parentElement?.children[next] as HTMLElement)?.focus(); }
-            }} aria-selected={tab === t.id} aria-controls="organizer-page" className={`jtab${tab === t.id ? ' on' : ''}`} onClick={() => setTab(t.id)} title={t.key}>
+          {tabs.map((t) => (
+            <button key={t.id} role="tab" tabIndex={shownTab === t.id ? 0 : -1} onKeyDown={e => {
+              const i = tabs.findIndex(x => x.id === t.id);
+              const next = e.key === "ArrowRight" ? (i + 1) % tabs.length : e.key === "ArrowLeft" ? (i + tabs.length - 1) % tabs.length : e.key === "Home" ? 0 : e.key === "End" ? tabs.length - 1 : -1;
+              if (next >= 0) { e.preventDefault(); setTab(tabs[next].id); (e.currentTarget.parentElement?.children[next] as HTMLElement)?.focus(); }
+            }} aria-selected={shownTab === t.id} aria-controls="organizer-page" className={`jtab${shownTab === t.id ? ' on' : ''}`} onClick={() => setTab(t.id)} title={t.key}>
               <span className="key">{t.key}</span>
               <span className="label">
                 <Icon name={`tabs/${t.id}`} size={14} /> {t.label}
@@ -205,7 +209,7 @@ export function Organizer() {
         </div>
         <div className={`journal planning-journal${withStrip ? ' with-strip' : ''}`}>
           <div className="journal-heading">
-            <Kicker className="gold">Gang Organizer · Week {w.week}</Kicker>
+            <Kicker className="gold">Gang Organizer · Week {w.week}{midWeek ? ' · week paused: new orders join the queue' : ''}</Kicker>
             <div className="journal-tools">
               <button className="journal-help" aria-label="Help" title="Help (?)" onClick={()=>useGame.getState().setHelpOpen(true)}>?</button>
               {!jobCard && <MapAccess />}
@@ -227,21 +231,21 @@ export function Organizer() {
             </div>
           )}
 
-          <div key={staff ? `staff-${staff.type}` : jobCard ? `job-${jobCard.type}` : tab} id="organizer-page" className="paper page" role="tabpanel" aria-label={TABS.find(t => t.id === tab)?.label}>
+          <div key={staff ? `staff-${staff.type}` : jobCard ? `job-${jobCard.type}` : shownTab} id="organizer-page" className="paper page" role="tabpanel" aria-label={TABS.find(t => t.id === shownTab)?.label}>
             {staff ? <SpecialistJobCard /> : jobCard ? <JobCardPanel /> : <>
               {withStrip && <label className="mobile-crew">Lieutenant <select aria-label="Crew" value={selectedTeamId ?? ''} onChange={e => useGame.getState().selectTeam(Number(e.target.value))}>
                 {gang.teamIds.map(id => <option key={id} value={id}>{w.teams[id]?.name}</option>)}
               </select></label>}
               <div className="page-body">
                 <TutorialPanel />
-                {tab === 'lieutenants' && <LieutenantsTab />}
-                {tab === 'accountant' && <AccountantTab />}
-                {tab === 'lawyer' && <LawyerTab />}
-                {tab === 'diplomacy' && <DiplomacyTab />}
-                {tab === 'newspaper' && <NewspaperTab />}
-                {tab === 'graphs' && <GraphsTab />}
-                {tab === 'maps' && <MapsTab />}
-                {tab === 'options' && <OptionsTab />}
+                {shownTab === 'lieutenants' && <LieutenantsTab />}
+                {shownTab === 'accountant' && <AccountantTab />}
+                {shownTab === 'lawyer' && <LawyerTab />}
+                {shownTab === 'diplomacy' && <DiplomacyTab />}
+                {shownTab === 'newspaper' && <NewspaperTab />}
+                {shownTab === 'graphs' && <GraphsTab />}
+                {shownTab === 'maps' && <MapsTab />}
+                {shownTab === 'options' && <OptionsTab />}
               </div>
 
               <div className="page-foot">
@@ -254,9 +258,18 @@ export function Organizer() {
                   </span>
                 </div>
                 <div className="brass flat">
-                  <button className="hit-streets" onClick={launchWeek} title="Save your orders and start the working week">
-                    Hit the Streets!
-                  </button>
+                  {midWeek ? <>
+                    <button className="btn" onClick={() => useGame.getState().closeWeekOrders()} title="Back to the street; the week stays paused">
+                      Back to the street
+                    </button>
+                    <button className="hit-streets" onClick={() => useGame.getState().setPaused(false)} title="Put the order book away and carry on with the week (P)">
+                      Resume the week
+                    </button>
+                  </> : (
+                    <button className="hit-streets" onClick={launchWeek} title="Save your orders and start the working week">
+                      Hit the Streets!
+                    </button>
+                  )}
                 </div>
               </div>
             </>}

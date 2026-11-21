@@ -25,7 +25,9 @@ export function useGameKeyboard() {
       const world = s.sim?.world;
       if (!world) return;
 
-      const planning = world.phase === 'planning';
+      // Mid-week orders (paused) take the planning desk's keys.
+      const weekOrders = s.weekOrders && world.phase === 'week';
+      const planning = world.phase === 'planning' || weekOrders;
       const gang = s.sim!.playerGang;
       // Ctrl+S / Ctrl+L / Ctrl+Q: save, load, quit — as the original had them.
       if (e.ctrlKey && (e.key === 's' || e.key === 'S')) {
@@ -145,7 +147,8 @@ export function useGameKeyboard() {
           break;
         case 'p':
         case 'P':
-          if (!planning) setPaused(!s.paused);
+          if (weekOrders) setPaused(false);
+          else if (!planning) setPaused(!s.paused);
           break;
         case '>':
         case '.':
@@ -255,7 +258,7 @@ export function useGameKeyboard() {
       const s = useGame.getState(), world = s.sim?.world;
       // The menu's demonstration city: the arrow keys belong to the menu.
       if (!world || !cameraApi.ref || s.attract) return;
-      if (e.code.startsWith('Key') && world.phase === 'planning') return;
+      if (e.code.startsWith('Key') && (world.phase === 'planning' || s.weekOrders && world.phase === 'week')) return;
       e.preventDefault();
       held.add(e.code);
       if (!frame) { last = performance.now(); frame = requestAnimationFrame(tick); }

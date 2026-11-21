@@ -150,7 +150,8 @@ export function CityView() {
         if (lastCard !== state.jobCard || lastTargetVersion !== state.version || lastPlanningView !== state.planningView || lastStaff !== state.specialistCard || lastPick !== state.pickMode || lastArea !== state.policeAreaBlockIds) {
           lastCard = state.jobCard; lastTargetVersion = state.version; lastPlanningView = state.planningView;
           lastStaff = state.specialistCard; lastPick = state.pickMode; lastArea = state.policeAreaBlockIds;
-          const card = s.world.phase === 'planning' && state.planningView === 'city' ? state.jobCard : null;
+          const ordering = s.world.phase === 'planning' || state.weekOrders && s.world.phase === 'week';
+          const card = ordering && state.planningView === 'city' ? state.jobCard : null;
           const available = new Set<number>(), selected = new Set(card ? selectedOrderSites(s.world, s.playerGang.id, card) : []);
           if (state.pickMode?.kind === 'lieutenantArea') {
             const areas = lieutenantAreaChoices(s.world, s.playerGang.id, state.pickMode.teamId);
@@ -166,7 +167,7 @@ export function CityView() {
               if (card.personId != null && people.get(b.id) === card.personId) selected.add(b.id);
             }
           }
-          const staff = s.world.phase === 'planning' && state.planningView === 'city' ? state.specialistCard : null;
+          const staff = ordering && state.planningView === 'city' ? state.specialistCard : null;
           const crimes = new Set<number>();
           if (staff && state.pickMode?.kind === 'policeArea') {
             const crimeBlocks = plannedCrimeBlocks(s.world, s.playerGang.id);
@@ -184,7 +185,7 @@ export function CityView() {
         }
 
         const sel = state.selectedBuildingId != null ? s.world.buildings[state.selectedBuildingId] : null;
-        const selectedPersonId = s.world.phase === 'planning' && state.specialistCard ? state.specialistCard.personId : state.selectedPersonId;
+        const selectedPersonId = (s.world.phase === 'planning' || state.weekOrders) && state.specialistCard ? state.specialistCard.personId : state.selectedPersonId;
         const selP = selectedPersonId != null ? s.world.people[selectedPersonId] : null;
         renderer.select(state.specialistCard ? null : sel ?? null, state.specialistCard ? null : selP ?? null);
         const tagged = s.world.phase === 'week' ? [...taggedViewApi.views.values()] : [];
@@ -252,7 +253,7 @@ export function CityView() {
         // hold the city image instead of spending half the skip drawing it.
         if (!state.finishingWeek && !state.savingSnapshot && state.loadingSave == null) renderer.update();
         // While the blueprint is on the desk the city is under it; no need to draw it.
-        if (!state.finishingWeek && !state.savingSnapshot && state.loadingSave == null && !(s.world.phase === 'planning' && state.planningView === 'plan')) renderer.render();
+        if (!state.finishingWeek && !state.savingSnapshot && state.loadingSave == null && !((s.world.phase === 'planning' || state.weekOrders && s.world.phase === 'week') && state.planningView === 'plan')) renderer.render();
         for (const view of tagged) {
           const status = renderer.taggedViewStatus(view.personId);
           view.element.dataset.flipped = String(status.flipped);
