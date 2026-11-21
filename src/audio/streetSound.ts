@@ -1,5 +1,6 @@
 import { audio } from './audio';
 import { playSample, sample, type SampleName } from './samples';
+import { JazzBand } from './jazz';
 
 /**
  * The street, heard: weapon reports, blasts, blows, fire, traffic and sirens,
@@ -16,6 +17,8 @@ interface Rig {
   noise: AudioBuffer;
   traffic: { gain: GainNode; filter: BiquadFilterNode; src: AudioBufferSourceNode; recorded: boolean } | null;
   fire: { gain: GainNode; stop: () => void; recorded: boolean } | null;
+  rain: { gain: GainNode; stop: () => void } | null;
+  club: { gain: GainNode; muffle: BiquadFilterNode; band: JazzBand } | null;
 }
 
 let rig: Rig | null = null;
@@ -46,7 +49,7 @@ function ready(): Rig | null {
   const dry = ctx.createGain(); dry.gain.value = 1;
   wet.connect(convolver).connect(out);
   dry.connect(out);
-  rig = { ctx, dry, wet, noise, traffic: null, fire: null };
+  rig = { ctx, dry, wet, noise, traffic: null, fire: null, rain: null, club: null };
   return rig;
 }
 
@@ -207,7 +210,70 @@ export const streetSound = {
     if (!rig) return;
     try { rig.traffic?.src.stop(); } catch { /* already stopped */ }
     try { rig.fire?.stop(); } catch { /* already stopped */ }
-    rig.traffic = null; rig.fire = null;
+    try { rig.rain?.stop(); } catch { /* already stopped */ }
+    rig.club?.band.stop();
+    rig.traffic = null; rig.fire = null; rig.rain = null; rig.club = null;
+  },
+
+  /**
+   * The weather and the nightlife: rain (hiss on the street, a low drumming
+   * on the roofs, the odd gutter drip), and a band heard through a club's
+   * walls and door, muffled, nearer the closer the view is to it.
+   */
+  setAmbience(rain: number, club: number): void {
+    const r = ready(); if (!r) return;
+    const now = r.ctx.currentTime;
+    if (!r.rain && rain > 0) {
+      const hissSrc = r.ctx.createBufferSource(); hissSrc.buffer = r.noise; hissSrc.loop = true;
+      const hiss = r.ctx.createBiquadFilter(); hiss.type = 'bandpass'; hiss.frequency.value = 5200; hiss.Q.value = .5;
+      const drumSrc = r.ctx.createBufferSource(); drumSrc.buffer = r.noise; drumSrc.loop = true;
+      const drum = r.ctx.createBiquadFilter(); drum.type = 'lowpass'; drum.frequency.value = 380;
+      const drumGain = r.ctx.createGain(); drumGain.gain.value = .55;
+      // Drips: sparse little ticks, looped.
+      const seconds = 4, rate = r.ctx.sampleRate, drips = r.ctx.createBuffer(1, seconds * rate, rate);
+      const data = drips.getChannelData(0);
+      for (let k = 0; k < seconds * 9; k++) {
+        const at = Math.floor(Math.random() * (seconds * rate - 3000)), amp = .3 + Math.random() * .5, f = 1800 + Math.random() * 2600;
+        for (let i = 0; i < 1400; i++) data[at + i] += Math.sin(i / rate * f * Math.PI * 2) * amp * Math.exp(-i / 220);
+      }
+      const dripSrc = r.ctx.createBufferSource(); dripSrc.buffer = drips; dripSrc.loop = true;
+      const dripGain = r.ctx.createGain(); dripGain.gain.value = .18;
+      const gain = r.ctx.createGain(); gain.gain.value = 0;
+      hissSrc.connect(hiss).connect(gain);
+      drumSrc.connect(drum).connect(drumGain).connect(gain);
+      dripSrc.connect(dripGain).connect(gain);
+      gain.connect(r.dry); gain.connect(r.wet);
+      hissSrc.start(0, Math.random()); drumSrc.start(0, Math.random()); dripSrc.start();
+      r.rain = { gain, stop: () => { hissSrc.stop(); drumSrc.stop(); dripSrc.stop(); } };
+    }
+    if (r.rain) r.rain.gain.gain.setTargetAtTime(rain * .32, now, .8);
+
+    if (!r.club && club > 0) {
+      const muffle = r.ctx.createBiquadFilter(); muffle.type = 'lowpass'; muffle.frequency.value = 700;
+      const gain = r.ctx.createGain(); gain.gain.value = 0;
+      muffle.connect(gain); gain.connect(r.dry); gain.connect(r.wet);
+      const band = new JazzBand(r.ctx, muffle, r.noise);
+      band.start();
+      r.club = { gain, muffle, band };
+    }
+    if (r.club) {
+      // Through the walls it is all bass and drums; at the door the clarinet comes through.
+      r.club.gain.gain.setTargetAtTime(club * .5, now, .5);
+      r.club.muffle.frequency.setTargetAtTime(500 + club * club * 3500, now, .5);
+      if (club <= 0.001 && r.club.gain.gain.value < .002) { r.club.band.stop(); r.club.gain.disconnect(); r.club = null; }
+    }
+  },
+
+  /** A tram's bell: two quick strokes of a bright bell. */
+  tramBell(gain: number, pan: number): void {
+    const r = ready(); if (!r) return;
+    const v = voice(r, gain * .5, pan, .6), now = r.ctx.currentTime;
+    for (const at of [0, .22]) for (const [f, a] of [[1568, 1], [2349, .5], [3951, .22]] as const) {
+      const o = r.ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
+      const g = r.ctx.createGain();
+      g.gain.setValueAtTime(a * .6, now + at); g.gain.exponentialRampToValueAtTime(.0004, now + at + 1.1);
+      o.connect(g).connect(v); o.start(now + at); o.stop(now + at + 1.15);
+    }
   },
 
   setBeds(traffic: number, fire: number): void {

@@ -154,6 +154,8 @@ const BUILT_MOTORCYCLE_SEAT = { ...MOTORCYCLE_SEAT, saddle: .835 };
 const RIDER_HIP_ABOVE_SADDLE = .1;
 /** Free view: beyond this distance from the eye, a figure's role no longer earns it a detailed model first. */
 const FREE_ROLE_DETAIL_METRES = 45;
+/** Premises where a band plays in the evening (heard in the street). */
+const CLUB_TYPES: ReadonlySet<string> = new Set(['cafe', 'restaurant', 'speakeasy', 'casino']);
 /** Half-width of a block's pavement slab. */
 const SLAB_HALF = BLOCK_SIZE / 2 + PAVE_W;
 /** Keep tyre soles just clear of the road, in metres. */
@@ -542,6 +544,7 @@ export class CityRenderer {
   private paveRough = .94;
   private smokeLight = new THREE.Color();
   private smokeNight = 0;
+  private clubSites: { x: number; z: number }[] = [];
   private smokeWind = new THREE.Vector2(.9, .35);
   private rainLight = new THREE.Color();
   private rainCentre = new THREE.Vector3();
@@ -1515,6 +1518,10 @@ export class CityRenderer {
     if (!this.makingBuildingView) this.windowSpill?.reset();
     if (!this.makingBuildingView) this.roomCache = [];
     if (!this.makingBuildingView) { this.chimneyTops = []; this.neon?.reset(); }
+    // Where a band plays at night: cafés, restaurants, speakeasies and casinos that are open.
+    if (!this.makingBuildingView) this.clubSites = Object.values(this.world.buildings)
+      .filter(b => CLUB_TYPES.has(b.typeId) && b.state === 'trading' && this.world.lots[b.lotId])
+      .map(b => ({ x: this.world.lots[b.lotId].center.x, z: this.world.lots[b.lotId].center.y }));
     this.footprints.clear();
     // The inset can temporarily rebuild different roofs; only the main view
     // owns the building-selection silhouette.
@@ -3440,7 +3447,8 @@ export class CityRenderer {
       for (const id of this.agentIds) { const r = this.world.people[id]?.emergencyResponse; if (r && r.week === this.world.week && r.stage === 'approaching' && r.kind !== 'reporter') { responders++; break; } }
       // The two fastest stages (8 and maximum) are too quick for one-shots.
       this.cityAudio.update(this.world, this.camera, this.target, this.groundReach(), zoom01, dt,
-        this.timeScale > 0, this.timeScale >= 8, this.cityEffects?.activeFires() ?? [], responders);
+        this.timeScale > 0, this.timeScale >= 8, this.cityEffects?.activeFires() ?? [], responders,
+        { rain: this.rainNow, night: this.smokeNight, clubs: this.clubSites });
     } else streetSound.setBeds(0, 0); // Planning, the menu: no traffic hum or crackle left looping.
 
     // Routine version bumps (many a second in the working week) are checked at

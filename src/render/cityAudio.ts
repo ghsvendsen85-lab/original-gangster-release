@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { presentationEvents } from '../sim/presentationEvents';
 import type { WorldState } from '../sim/types';
 import { streetSound, type ShotKind } from '../audio/streetSound';
+import { tramsAt } from '../sim/trams';
 
 /** At most this many one-shots start in any tenth of a second; a fast clock
  * would otherwise fire a whole minute's gunfight at once. */
@@ -26,13 +27,15 @@ export class CityAudio {
   private roared = new Map<number, number>();
   private doors = new Set<string>();
   private scratch = new THREE.Vector3();
+  private nextBell = 4;
 
   /**
    * `reach` is the ground distance from the view centre to its edge, `zoom`
    * 0..1 from the plan up to Street View, `running` whether the week's clock moves.
    */
   update(world: WorldState, camera: THREE.Camera, target: THREE.Vector3, reach: number, zoom: number, delta: number,
-    running: boolean, fast: boolean, fires: { x: number; z: number }[], responders: number): void {
+    running: boolean, fast: boolean, fires: { x: number; z: number }[], responders: number,
+    ambience: { rain: number; night: number; clubs: readonly { x: number; z: number }[] } = { rain: 0, night: 0, clubs: [] }): void {
     const stream = presentationEvents(world);
     if (world !== this.world || world.week !== this.week) { this.world = world; this.week = world.week; this.sequence = stream.sequence; this.roared.clear(); this.doors.clear(); }
     this.clock += delta;
@@ -73,11 +76,29 @@ export class CityAudio {
     let fire = 0;
     for (const f of fires) fire = Math.max(fire, place(f.x, f.z).gain);
     streetSound.setBeds(running ? .25 + .75 * zoom : zoom * .3, fire);
+    // Rain everywhere in view; a band in the nearest club once the evening comes.
+    let club = 0;
+    if (ambience.night > .05) for (const c of ambience.clubs) {
+      const d = Math.hypot(c.x - target.x, c.z - target.z);
+      if (d < 45) club = Math.max(club, Math.pow(1 - d / 45, 2));
+    }
+    streetSound.setAmbience(ambience.rain * (.4 + .6 * zoom), club * ambience.night * near);
 
     if (!running || fast) return;
     if (this.clock > this.nextHorn) {
       this.nextHorn = this.clock + 5 + Math.random() * 12;
       streetSound.horn((.3 + .5 * Math.random()) * near, Math.random() * 1.6 - .8);
+    }
+    // A tram near the view rings its bell now and then.
+    if (this.clock > this.nextBell) {
+      this.nextBell = this.clock + 6 + Math.random() * 10;
+      let best: { gain: number; pan: number } | null = null;
+      for (const t of tramsAt(world, world.minute)) {
+        if (!t?.visible) continue;
+        const p = place(t.x, t.y);
+        if (p.gain > .05 && (!best || p.gain > best.gain)) best = p;
+      }
+      if (best) streetSound.tramBell(best.gain, best.pan);
     }
     if (responders > 0 && this.clock > this.nextSiren) {
       this.nextSiren = this.clock + 9 + Math.random() * 6;
