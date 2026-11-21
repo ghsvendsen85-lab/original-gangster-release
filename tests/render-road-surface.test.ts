@@ -22,7 +22,7 @@ describe('road detail texture lifetime', () => {
     const renderer={compile:vi.fn(),initTexture:vi.fn()};
     expect(await prepareScene(renderer,scene,new Camera(),()=>true)).toBe(true);
     const uploaded=new Set(renderer.initTexture.mock.calls.map(call=>call[0]));
-    expect(uploaded).toEqual(new Set([overlay,material.asphaltMap,material.markingMap,material.labelMap,material.roadBlocks,material.lineNames]));
+    expect(uploaded).toEqual(new Set([overlay,material.asphaltMap,material.markingMap,material.labelMap,material.roadBlocks,material.riverBlocks,material.lineNames]));
     expect(scene.children).toHaveLength(1);
   });
 

@@ -15,7 +15,7 @@ function fixture() {
   // Use the real method; the fixture avoids creating WebGL/DOM or a whole city.
   delete (view as Partial<typeof fields>).applyArt;
   const empty: CityArt = { facades: [], roof: null, storefront: null, plinth: null,
-    pavement: null, kerb: null, awning: null, sawtooth: null, signs: null, road: null };
+    pavement: null, pavementNormal: null, pavementRoughness: null, grass: null, kerb: null, awning: null, sawtooth: null, signs: null, road: null };
   return { view, empty };
 }
 

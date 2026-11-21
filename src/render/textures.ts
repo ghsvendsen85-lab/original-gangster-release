@@ -13,6 +13,7 @@
 import * as THREE from 'three';
 import { BUILDING_TYPES } from '../sim/data/buildings';
 import { TILE_BAYS, TILE_STOREYS, mulberry32 } from './util';
+import { limitTextureSize, textureLimit } from './textureQuality';
 
 function makeCanvas(w: number, h: number): { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D } {
   const canvas = document.createElement('canvas');
@@ -777,17 +778,25 @@ let cached: CityTextures | null = null;
 
 /** What public/art/city provides; every part optional, since each file may fail alone. */
 export interface CityArt {
-  facades: ({ map: THREE.Texture; lights: THREE.Texture } | null)[];
+  facades: ({ map: THREE.Texture; lights: THREE.Texture; normal?: THREE.Texture | null; roughness?: THREE.Texture | null } | null)[];
   roof: THREE.Texture | null;
   storefront: { map: THREE.Texture; lights: THREE.Texture } | null;
   plinth: THREE.Texture | null;
   pavement: THREE.Texture | null;
+  /** Surface relief and roughness for the pavement slabs (linear data). */
+  pavementNormal: THREE.Texture | null;
+  pavementRoughness: THREE.Texture | null;
+  /** Lawns: colour, normal and roughness, tiling. */
+  grass: { map: THREE.Texture; normal: THREE.Texture | null; roughness: THREE.Texture | null } | null;
   kerb: THREE.Texture | null;
   awning: THREE.Texture | null;
   sawtooth: THREE.Texture | null;
   signs: SignAtlas | null;
   /** The road surface, as an image for the ground painter's pattern. */
   road: HTMLImageElement | null;
+  /** Its relief and roughness (linear data, same tiling). */
+  roadNormal?: THREE.Texture | null;
+  roadRoughness?: THREE.Texture | null;
 }
 
 const ART_CITY = `${import.meta.env.BASE_URL}art/city/`;
@@ -816,6 +825,19 @@ function loadTexture(file: string, repeat = true): Promise<THREE.Texture | null>
     .catch(() => null);
 }
 
+/**
+ * A 2048² photographed surface: colour (sRGB) or data (normal, roughness:
+ * linear), drawn at 1024² on Standard texture quality.
+ */
+function loadSurface(file: string, data = false): Promise<THREE.Texture | null> {
+  return loadTexture(file).then((t) => {
+    if (!t) return null;
+    if (data) t.colorSpace = THREE.NoColorSpace;
+    limitTextureSize(t, textureLimit());
+    return t;
+  });
+}
+
 function loadImageFile(file: string): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
     const img = new Image();
@@ -840,13 +862,25 @@ let artLoading: Promise<CityArt> | null = null;
 export function loadCityArt(): Promise<CityArt> {
   if (artLoading) return artLoading;
   artLoading = (async () => {
+    // Photographed ground surfaces (CC0, ambientCG: Concrete008, Grass004, Road012A).
+    const surfaces = Promise.all([
+      loadSurface('pavement-normal.jpg', true), loadSurface('pavement-roughness.jpg', true),
+      loadSurface('grass.jpg'), loadSurface('grass-normal.jpg', true), loadSurface('grass-roughness.jpg', true),
+      loadSurface('road-asphalt-normal.jpg', true), loadSurface('road-asphalt-roughness.jpg', true),
+    ]);
     const [facades, roof, storefront, plinth, pavement, kerb, awning, sawtooth, road, ...boards] = await Promise.all([
-      Promise.all(FACADE_PALETTES.map((p) => p.name === 'church' ? Promise.resolve(null)
-        : loadPair(FACADE_FILES[p.name] ?? p.name, 'jpg'))),
+      Promise.all(FACADE_PALETTES.map(async (p) => {
+        if (p.name === 'church') return null;
+        const stem = FACADE_FILES[p.name] ?? p.name;
+        const [pair, normal, roughness] = await Promise.all([loadPair(stem, 'jpg'),
+          FACADE_FILES[p.name] ? loadSurface(`${stem}-normal.jpg`, true) : null,
+          FACADE_FILES[p.name] ? loadSurface(`${stem}-roughness.jpg`, true) : null]);
+        return pair && { ...pair, normal, roughness };
+      })),
       loadTexture('roof-asphalt.jpg'),
       loadPair('storefront', 'jpg'),
       loadTexture('plinth.jpg'),
-      loadTexture('pavement.jpg'),
+      loadSurface('pavement.jpg'),
       loadTexture('kerb.jpg'),
       loadTexture('awning.png'),
       loadTexture('sawtooth-glazing.jpg'),
@@ -860,7 +894,9 @@ export function loadCityArt(): Promise<CityArt> {
     const industrial = boards[SIGN_FILES.length + 1] as HTMLImageElement | null;
     const signs =
       civic && industrial && styles.every(Boolean) ? makeSignAtlas({ styles: styles as HTMLImageElement[], civic, industrial }) : null;
-    return { facades, roof, storefront, plinth, pavement, kerb, awning, sawtooth, signs, road };
+    const [pavementNormal, pavementRoughness, grassMap, grassNormal, grassRoughness, roadNormal, roadRoughness] = await surfaces;
+    const grass = grassMap ? { map: grassMap, normal: grassNormal, roughness: grassRoughness } : null;
+    return { facades, roof, storefront, plinth, pavement, pavementNormal, pavementRoughness, grass, kerb, awning, sawtooth, signs, road, roadNormal, roadRoughness };
   })();
   return artLoading;
 }

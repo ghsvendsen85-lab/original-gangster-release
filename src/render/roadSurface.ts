@@ -85,6 +85,14 @@ export class RoadSurfaceMaterial extends THREE.MeshStandardMaterial {
   /** Which name each street line carries: row 0 north-south lines, row 1 east-west. */
   readonly lineNames: THREE.DataTexture;
   readonly lineCount = { value: 1 };
+  /** One texel per block: red = river, green = which sides stop at the plot line (N 1, S 2, W 4, E 8). */
+  readonly riverBlocks: THREE.DataTexture;
+  /** Distance of the water's edge from the cell edge on a land or bridge side. */
+  readonly riverPlot = { value: 0 };
+  /** Photographed asphalt relief and roughness (shared art, not owned); 0 until delivered. */
+  private readonly asphaltNormal: { value: THREE.Texture };
+  private readonly asphaltRoughness: { value: THREE.Texture };
+  readonly asphaltDetail = { value: 0 };
 
   constructor(overlay: THREE.Texture, owner: TextureOwner, fallback: HTMLCanvasElement, streetInset = 0, paveW = PAVE_W) {
     super({ map: overlay, roughness: .93, metalness: .02 });
@@ -97,6 +105,9 @@ export class RoadSurfaceMaterial extends THREE.MeshStandardMaterial {
     this.roadBlocks = owner.own(new THREE.DataTexture(new Uint8Array(4), 1, 1, THREE.RGBAFormat));
     this.roadBlocks.magFilter = this.roadBlocks.minFilter = THREE.NearestFilter;
     this.roadBlocks.needsUpdate = true;
+    this.riverBlocks = owner.own(new THREE.DataTexture(new Uint8Array(4), 1, 1, THREE.RGBAFormat));
+    this.riverBlocks.magFilter = this.riverBlocks.minFilter = THREE.NearestFilter;
+    this.riverBlocks.needsUpdate = true;
     this.lineNames = owner.own(new THREE.DataTexture(new Uint8Array(8), 1, 2, THREE.RGBAFormat));
     this.lineNames.magFilter = this.lineNames.minFilter = THREE.NearestFilter;
     this.lineNames.needsUpdate = true;
@@ -108,6 +119,13 @@ export class RoadSurfaceMaterial extends THREE.MeshStandardMaterial {
       texture.needsUpdate = true;
     }
     this.asphaltUniform = { value: this.asphaltMap };
+    const flat = (r: number, g: number, b: number) => {
+      const t = owner.own(new THREE.DataTexture(new Uint8Array([r, g, b, 255]), 1, 1, THREE.RGBAFormat));
+      t.needsUpdate = true;
+      return t;
+    };
+    this.asphaltNormal = { value: flat(128, 128, 255) };
+    this.asphaltRoughness = { value: flat(255, 255, 255) };
     this.labelMap.anisotropy = 16;
     this.refreshLabels();
     this.onBeforeCompile = shader => {
@@ -121,6 +139,11 @@ export class RoadSurfaceMaterial extends THREE.MeshStandardMaterial {
       shader.uniforms.roadMaskFrom = this.roadMaskFrom;
       shader.uniforms.lineNames = { value: this.lineNames };
       shader.uniforms.lineCount = this.lineCount;
+      shader.uniforms.riverBlocks = { value: this.riverBlocks };
+      shader.uniforms.riverPlot = this.riverPlot;
+      shader.uniforms.roadNormal = this.asphaltNormal;
+      shader.uniforms.roadRoughness = this.asphaltRoughness;
+      shader.uniforms.roadDetail = this.asphaltDetail;
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nvarying vec2 vRoadPosition;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRoadPosition = (modelMatrix * vec4(position, 1.0)).xz;');
@@ -137,6 +160,11 @@ export class RoadSurfaceMaterial extends THREE.MeshStandardMaterial {
           uniform float roadMaskFrom;
           uniform sampler2D lineNames;
           uniform float lineCount;
+          uniform sampler2D roadNormal;
+          uniform sampler2D roadRoughness;
+          uniform float roadDetail;
+          uniform sampler2D riverBlocks;
+          uniform float riverPlot;
           float lineName(float line, float row) {
             float i = clamp(line, 0.0, lineCount - 1.0);
             return floor(texture2D(lineNames, vec2((i + 0.5) / lineCount, row)).r * 255.0 + 0.5);
@@ -151,9 +179,24 @@ export class RoadSurfaceMaterial extends THREE.MeshStandardMaterial {
           }`)
         .replace('#include <map_fragment>', `
           vec2 roadGrid = vRoadPosition / ${CELL.toFixed(1)};
+          // The river runs in a sunken channel: open the street surface over the
+          // water (the same rectangle as riverBank), down to the embankments.
+          {
+            vec2 riverCell = floor(roadGrid);
+            vec4 river = texture2D(riverBlocks, (riverCell + 0.5) / roadBlockGrid);
+            if (river.r > 0.5) {
+              float sides = floor(river.g * 255.0 + 0.5);
+              vec2 local = vRoadPosition - riverCell * ${CELL.toFixed(1)};
+              float n = mod(sides, 2.0), s = mod(floor(sides / 2.0), 2.0);
+              float w = mod(floor(sides / 4.0), 2.0), e = mod(floor(sides / 8.0), 2.0);
+              if (local.x > w * riverPlot && local.x < ${CELL.toFixed(1)} - e * riverPlot &&
+                  local.y > n * riverPlot && local.y < ${CELL.toFixed(1)} - s * riverPlot) discard;
+            }
+          }
           vec2 streetIndex = floor(roadGrid + 0.5);
           vec2 streetOffset = vRoadPosition - streetIndex * ${CELL.toFixed(1)};
-          vec3 roadColour = texture2D(roadAsphalt, vec2(vRoadPosition.x, -vRoadPosition.y) / ${ROAD_ASPHALT_METRES.toFixed(1)}).rgb;
+          vec2 roadDetailUv = vec2(vRoadPosition.x, -vRoadPosition.y) / ${ROAD_ASPHALT_METRES.toFixed(1)};
+          vec3 roadColour = texture2D(roadAsphalt, roadDetailUv).rgb;
           // Rails differ by avenue. Analytic edges stay sharp without another city-size image.
           vec2 railDistance = abs(abs(streetOffset) - 0.72);
           vec2 aa = max(fwidth(vRoadPosition), vec2(0.001));
@@ -185,9 +228,19 @@ export class RoadSurfaceMaterial extends THREE.MeshStandardMaterial {
           // The strategic wash must tint the names and crossings as well as asphalt.
           vec3 painted = mix(roadColour, overlayPaint.rgb, overlayPaint.a);
           diffuseColor.rgb *= mix(painted / 12.92, pow((painted + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), painted));
-        `);
+        `)
+        // Worn and patched asphalt: rougher aggregate, smoother tar seams
+        // (they catch the evening sheen first).
+        .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+          roughnessFactor = clamp(roughnessFactor * mix(1.0, 0.62 + 0.55 * texture2D(roadRoughness, roadDetailUv).g, roadDetail), 0.04, 1.0);`)
+        // The road is a flat, level plane: its tangent frame is the world axes
+        // (u along +x, v along -z), so the relief needs no derivatives.
+        .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+          vec3 roadBump = texture2D(roadNormal, roadDetailUv).xyz * 2.0 - 1.0;
+          vec3 roadWorldNormal = normalize(vec3(roadBump.x * 0.9, roadBump.z, -roadBump.y * 0.9));
+          normal = normalize(mix(normal, normalize((viewMatrix * vec4(roadWorldNormal, 0.0)).xyz), roadDetail));`);
     };
-    this.customProgramCacheKey = () => 'og-road-detail-v6';
+    this.customProgramCacheKey = () => 'og-road-detail-v8';
   }
 
   override dispose(): void {
@@ -214,6 +267,20 @@ export class RoadSurfaceMaterial extends THREE.MeshStandardMaterial {
     this.roadBlocks.needsUpdate = true;
   }
 
+  /** Mark the river's blocks and which of their sides end the water at the plot line. */
+  setRiverBlocks(gridW: number, gridH: number, plot: number, river: (index: number) => { N: boolean; S: boolean; W: boolean; E: boolean } | null): void {
+    const data = new Uint8Array(gridW * gridH * 4);
+    for (let i = 0; i < gridW * gridH; i++) {
+      const r = river(i);
+      if (!r) continue;
+      data[i * 4] = 255;
+      data[i * 4 + 1] = (r.N ? 1 : 0) | (r.S ? 2 : 0) | (r.W ? 4 : 0) | (r.E ? 8 : 0);
+    }
+    this.riverBlocks.image = { data, width: gridW, height: gridH };
+    this.riverBlocks.needsUpdate = true;
+    this.riverPlot.value = plot;
+  }
+
   /** The name index of every street line (see streetNameIndex). */
   setLineNames(nsLines: number, ewLines: number, name: (axis: 'ns' | 'ew', line: number) => number): void {
     const count = Math.max(nsLines, ewLines), data = new Uint8Array(count * 2 * 4);
@@ -238,6 +305,13 @@ export class RoadSurfaceMaterial extends THREE.MeshStandardMaterial {
     next.needsUpdate = true;
     this.asphaltMap = this.asphaltUniform.value = this.owner.replace(this.asphaltMap, next);
     next.dispose();
+  }
+
+  /** Relief and roughness for the photographed asphalt (src/render/textures.ts). */
+  setAsphaltDetail(normal: THREE.Texture | null, roughness: THREE.Texture | null): void {
+    if (normal) this.asphaltNormal.value = normal;
+    if (roughness) this.asphaltRoughness.value = roughness;
+    this.asphaltDetail.value = normal && roughness ? 1 : 0;
   }
 
   refreshLabels(): void {

@@ -275,6 +275,7 @@ export function MainMenu() {
               icons, portraits, city facades, mastheads, cursors, and the people, vehicles, trees and rubble of
               the streets.
             </p>
+            <p>Pavement, lawn and road surface textures: Concrete008, Grass004 and Road012A from ambientCG.com (CC0 public domain).</p>
             <h4>Music and sound</h4>
             <p>The score and the city's sounds were made for this game; synthesised Web Audio stands in until they load.</p>
             <h4>Type and tools</h4>

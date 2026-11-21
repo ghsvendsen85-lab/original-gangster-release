@@ -15,6 +15,7 @@ import {loadCombatMotions} from './combatMotions';
 import { characterSupports, characterFloor, type GroundSupport } from './characterGrounding';
 import type { VehicleId } from '../sim/types';
 import { createSculptVehicle, SCULPT_VEHICLE_KINDS } from './sculptVehicles';
+import { hipHeight, poseRider } from './riderPose';
 
 const BASE = `${import.meta.env.BASE_URL}art/city/sculpt`;
 const STYLES = DETAILED_CHARACTER_STYLES;
@@ -254,7 +255,12 @@ export class SculptReviewLayer {
     }
     entry.motion.sample(phase,walking,frame);
     entry.group.updateMatrixWorld(true);
-    if(frame){
+    if(frame?.seat){
+      // A rider: the riding pose over the sampled frame, hips on the saddle.
+      poseRider(entry.model,entry.group);
+      const hips=hipHeight(entry.model);
+      if(hips!=null){entry.model.position.y+=(frame.seat.hipY-hips)/groupScale;entry.group.updateMatrixWorld(true);}
+    }else if(frame){
       const action=liveCharacterAction(frame.action,frame.previewActions);
       // Kneeling or lying between close-combat blows is grounded like a fall.
       const active=(action&&['hit','death','burnDeath','fleeBurning','strike','throw'].includes(action.kind))||

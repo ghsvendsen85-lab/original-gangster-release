@@ -26,6 +26,12 @@ export function patchInstancedUv(mat: Material, facade = false): void {
         #endif
         #ifdef USE_EMISSIVEMAP
           vEmissiveMapUv = vEmissiveMapUv * instanceUvScale + aUvXform.zw;
+        #endif
+        #ifdef USE_NORMALMAP
+          vNormalMapUv = vNormalMapUv * instanceUvScale + aUvXform.zw;
+        #endif
+        #ifdef USE_ROUGHNESSMAP
+          vRoughnessMapUv = vRoughnessMapUv * instanceUvScale + aUvXform.zw;
         #endif`);
     if (facade) {
       // Ground contact: a wall darkens over its lowest metre and a half, where
@@ -43,7 +49,7 @@ export function patchInstancedUv(mat: Material, facade = false): void {
           diffuseColor.rgb *= mix(${CONTACT_SHADE.toFixed(2)}, 1.0, smoothstep(${KERB_TOP.toFixed(2)}, ${(KERB_TOP + 1.6).toFixed(2)}, vWallHeight));`);
     }
   };
-  mat.customProgramCacheKey = () => `og-instanced-uv-v3-${facade ? 'facade' : 'frontage'}`;
+  mat.customProgramCacheKey = () => `og-instanced-uv-v4-${facade ? 'facade' : 'frontage'}`;
 }
 
 /** Unit shell-roof UVs become metre-based rather than repeating per building. */

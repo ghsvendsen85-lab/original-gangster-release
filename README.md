@@ -6,7 +6,9 @@ the desk, then watch it play out on the streets of a fully 3D city.
 
 Original Gangster is a fan project. It is not affiliated with or endorsed by
 Hothouse Creations, Eidos Interactive or the rights holders of the original game.
-All art, models, music and sound were made for this project.
+All art, models, music and sound were made for this project, except the pavement,
+grass and road surface textures (Concrete008, Grass004 and Road012A from [ambientCG](https://ambientcg.com),
+CC0 public domain).
 
 ## Play
 

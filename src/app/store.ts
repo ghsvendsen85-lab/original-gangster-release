@@ -102,6 +102,9 @@ interface GameState {
   /** Soft shadowing in corners and at wall feet in the free 3D view (costs frame rate; on by default). */
   ambientOcclusion: boolean;
   setAmbientOcclusion: (on: boolean) => void;
+  /** Fully animated people on the street at once (32 by default; more costs frame rate). */
+  detailedPeople: number;
+  setDetailedPeople: (count: number) => void;
   /** The original's Mouse Reversal (Advanced Options): dragging moves the view the other way. */
   mouseReversal: boolean;
   /** Model texture quality; applies when the city next loads (A20). */
@@ -263,6 +266,15 @@ function readRoadNames(): boolean {
   try { return localStorage.getItem('og.roadNames') === '1'; } catch { return false; }
 }
 
+export const DETAILED_PEOPLE_STEPS = [32, 48, 64, 96] as const;
+
+function readDetailedPeople(): number {
+  try {
+    const n = Number(localStorage.getItem('og.detailedPeople'));
+    return (DETAILED_PEOPLE_STEPS as readonly number[]).includes(n) ? n : 32;
+  } catch { return 32; }
+}
+
 function readAmbientOcclusion(): boolean {
   try { return localStorage.getItem('og.ambientOcclusion') !== '0'; } catch { return true; }
 }
@@ -312,6 +324,7 @@ export const useGame = create<GameState>((set, get) => ({
   autoLowerRoofs: readAutoLower(),
   roadNames: readRoadNames(),
   ambientOcclusion: readAmbientOcclusion(),
+  detailedPeople: readDetailedPeople(),
   mouseReversal: readMouseReversal(),
   textureQuality: readTextureQuality(),
   uiScale: readUiScale(),
@@ -606,6 +619,10 @@ export const useGame = create<GameState>((set, get) => ({
   setAmbientOcclusion: (ambientOcclusion) => {
     try { localStorage.setItem('og.ambientOcclusion', ambientOcclusion ? '1' : '0'); } catch { /* session only */ }
     set({ ambientOcclusion });
+  },
+  setDetailedPeople: (detailedPeople) => {
+    try { localStorage.setItem('og.detailedPeople', String(detailedPeople)); } catch { /* session only */ }
+    set({ detailedPeople });
   },
   setAutoLowerRoofs: (autoLowerRoofs) => {
     try {

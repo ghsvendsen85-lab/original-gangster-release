@@ -15,7 +15,8 @@ import {hitDuration,shootingTime,SHOOT_DURATION,PUNCH_DURATION} from './combatMo
 export interface CharacterFrame {clock:number;delta:number;action?:CharacterAction;previewActions?:boolean;
   /** Replaces the walk cycle while moving (a pursuer runs). */gait?:DailyGait;
   /** Replaces the idle stance while standing (a meeting, a search). */gesture?:DailyGesture;
-  /** Close combat: a kneeling or fallen fighter holds that pose between blows. */posture?:CombatPosture}
+  /** Close combat: a kneeling or fallen fighter holds that pose between blows. */posture?:CombatPosture;
+  /** Astride a motorcycle: the riding pose, with the hips at this world height. */seat?:{hipY:number}}
 type MotionName=CombatMotionName|DailyMotionName|CloseMotionName|'fleeBurning'|'throw'|'pistolDraw'|'pistolDualDraw'|'rifleDraw'|'rifleHolster';
 const upperBody=(track:THREE.KeyframeTrack)=>/^(Spine\d*|Neck|Head|(?:Left|Right)(?:Shoulder|Arm|ForeArm|Hand))\./.test(track.name);
 /** Small reactions use the body's own neutral pose, avoiding donor T-pose flails. */

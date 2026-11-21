@@ -11,6 +11,90 @@ export interface RiverBank {
   banks: Rect[];
   /** Railings along the water's edge on land sides; at a bridge, its parapets. */
   railings: { x0: number; y0: number; x1: number; y1: number }[];
+  /** Which sides of the cell end the water at the plot line (land or a bridge deck). */
+  sides: { N: boolean; S: boolean; W: boolean; E: boolean };
+  /** Water's edge distance from the cell edge on those sides. */
+  plot: number;
+}
+
+/** The river runs in a sunken channel, this far below the carriageway (metres). */
+export const RIVER_LEVEL = -1.8;
+
+/** A box in plan: centre and size on the ground (x, z). */
+export interface WallPiece { x: number; z: number; w: number; d: number }
+
+/**
+ * The embankment walls round the whole channel: wherever water (the union of
+ * the blocks' water rectangles) meets dry ground inside the map, a wall of
+ * `thickness` on the dry side, plus a square at every corner so bends, bank
+ * ends and bridge abutments close up. Off the map the river flows on: no wall.
+ * Built on the rectangles' own edges (a compressed grid), so walls line up
+ * exactly with the street surface's opening.
+ */
+export function embankmentWalls(rects: readonly Rect[], mapW: number, mapH: number, thickness = .6): WallPiece[] {
+  if (!rects.length) return [];
+  const xs = [...new Set(rects.flatMap(r => [r.x, r.x + r.w]).concat([0, mapW]))].sort((a, b) => a - b);
+  const zs = [...new Set(rects.flatMap(r => [r.y, r.y + r.h]).concat([0, mapH]))].sort((a, b) => a - b);
+  const nx = xs.length - 1, nz = zs.length - 1;
+  const wet = new Uint8Array(nx * nz);
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+    const cx = (xs[i] + xs[i + 1]) / 2, cz = (zs[j] + zs[j + 1]) / 2;
+    if (rects.some(r => cx > r.x && cx < r.x + r.w && cz > r.y && cz < r.y + r.h)) wet[j * nx + i] = 1;
+  }
+  // Off the map is neither: the river flows on and the land carries on, so a
+  // boundary needs water and dry ground both inside the map.
+  const inside = (i: number, j: number) => i >= 0 && j >= 0 && i < nx && j < nz;
+  const isWet = (i: number, j: number) => inside(i, j) && wet[j * nx + i] === 1;
+  const isDry = (i: number, j: number) => inside(i, j) && wet[j * nx + i] === 0;
+  const edge = (ai: number, aj: number, bi: number, bj: number) =>
+    isWet(ai, aj) && isDry(bi, bj) ? 1 : isDry(ai, aj) && isWet(bi, bj) ? -1 : 0;
+  const pieces: WallPiece[] = [];
+  const t = thickness;
+  // Vertical boundaries (between columns i-1 and i), merged down each run.
+  for (let i = 0; i <= nx; i++) {
+    let start = -1, side = 0;
+    const flush = (end: number) => {
+      if (start < 0) return;
+      const x = xs[i] + side * t / 2, z0 = zs[start], z1 = zs[end];
+      pieces.push({ x, z: (z0 + z1) / 2, w: t, d: z1 - z0 });
+      start = -1;
+    };
+    for (let j = 0; j <= nz; j++) {
+      const s = j < nz ? edge(i - 1, j, i, j) : 0; // +1: water left, wall on the right (dry) side
+      if (s !== side || s === 0) { flush(j); }
+      if (s !== 0 && start < 0) { start = j; side = s; }
+    }
+  }
+  // Horizontal boundaries (between rows j-1 and j).
+  for (let j = 0; j <= nz; j++) {
+    let start = -1, side = 0;
+    const flush = (end: number) => {
+      if (start < 0) return;
+      const z = zs[j] + side * t / 2, x0 = xs[start], x1 = xs[end];
+      pieces.push({ x: (x0 + x1) / 2, z, w: x1 - x0, d: t });
+      start = -1;
+    };
+    for (let i = 0; i <= nx; i++) {
+      const s = i < nx ? edge(i, j - 1, i, j) : 0;
+      if (s !== side || s === 0) { flush(i); }
+      if (s !== 0 && start < 0) { start = i; side = s; }
+    }
+  }
+  // Corner squares: at every grid point where water and dry ground meet, fill
+  // the dry quadrants' corner so two walls meeting there leave no notch.
+  for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) {
+    const quads = [[i - 1, j - 1, -1, -1], [i, j - 1, 1, -1], [i - 1, j, -1, 1], [i, j, 1, 1]] as const;
+    const wets = quads.map(([a, b]) => isWet(a, b)), drys = quads.map(([a, b]) => isDry(a, b));
+    if (!wets.some(Boolean) || !drys.some(Boolean)) continue;
+    // A straight run (water on one whole side) needs no corner piece.
+    const [nw, ne, sw, se] = wets, [dnw, dne, dsw, dse] = drys;
+    if ((nw && ne && dsw && dse) || (sw && se && dnw && dne) || (nw && sw && dne && dse) || (ne && se && dnw && dsw)) continue;
+    for (const [k, [, , sx, sz]] of quads.entries()) {
+      if (!drys[k]) continue;
+      pieces.push({ x: xs[i] + sx * t / 2, z: zs[j] + sz * t / 2, w: t, d: t });
+    }
+  }
+  return pieces;
 }
 
 /**
@@ -56,5 +140,5 @@ export function riverBank(w: WorldState, b: Block): RiverBank {
   if (S) railings.push({ x0: r.x, y0: r.y + r.h, x1: r.x + r.w, y1: r.y + r.h });
   if (W) railings.push({ x0: r.x, y0: r.y, x1: r.x, y1: r.y + r.h });
   if (E) railings.push({ x0: r.x + r.w, y0: r.y, x1: r.x + r.w, y1: r.y + r.h });
-  return { water, banks, railings };
+  return { water, banks, railings, sides: { N, S, W, E }, plot };
 }

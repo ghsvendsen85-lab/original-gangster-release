@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { SAVE_NAME_MAX, useGame } from '../../app/store';
+import { DETAILED_PEOPLE_STEPS, SAVE_NAME_MAX, useGame } from '../../app/store';
 import { slotLoadable } from '../../app/save';
 import { useSaveActions } from '../saveActions';
 import { cameraApi } from '../CityView';
@@ -65,6 +65,8 @@ export function OptionsTab() {
   const textureQuality = useGame((s) => s.textureQuality);
   const setRoadNames = useGame((s) => s.setRoadNames);
   const ambientOcclusion = useGame((s) => s.ambientOcclusion);
+  const detailedPeople = useGame((s) => s.detailedPeople);
+  const setDetailedPeople = useGame((s) => s.setDetailedPeople);
   const setAmbientOcclusion = useGame((s) => s.setAmbientOcclusion);
   const setAutoLowerRoofs = useGame((s) => s.setAutoLowerRoofs);
   const startGame = useGame((s) => s.startGame);
@@ -205,6 +207,13 @@ export function OptionsTab() {
         </button>
         <div className="muted tiny" style={{ marginTop: 6 }}>
           Standard uses a quarter of the graphics memory for people, cars and trees, for older graphics cards. It applies when the city next loads.
+        </div>
+        <button className="btn sm" style={{ marginTop: 8 }}
+          onClick={() => setDetailedPeople(DETAILED_PEOPLE_STEPS[(DETAILED_PEOPLE_STEPS.indexOf(detailedPeople as typeof DETAILED_PEOPLE_STEPS[number]) + 1) % DETAILED_PEOPLE_STEPS.length])}>
+          {`Detailed people on screen: ${detailedPeople}`}
+        </button>
+        <div className="muted tiny" style={{ marginTop: 6 }}>
+          The nearest people are fully modelled and animated; the rest of a crowd uses simple figures. More detailed people costs frame rate on busy streets.
         </div>
         <InterfaceSize />
       </Panel>

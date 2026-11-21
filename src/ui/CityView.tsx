@@ -130,6 +130,7 @@ export function CityView() {
         renderer.setHiddenRoofs(state.autoLowerRoofs && viewForZoom(renderer.getZoom()) === 'street');
         renderer.setRoadNames(state.roadNames);
         renderer.setAmbientOcclusion(state.ambientOcclusion);
+        renderer.setDetailedPeople(state.detailedPeople);
 
         // A new week rebuilds the ground plan and the skyline.
         if (s.world.week !== lastWeek || s.world.phase !== lastPhase) {

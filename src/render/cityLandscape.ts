@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { activeBlocks, blockRect, cityStreetInset } from '../sim/cityLayout';
 import { CELL } from '../sim/constants';
-import { riverBank, riverCrossing } from './riverBanks';
+import { RIVER_LEVEL, embankmentWalls, riverBank, riverCrossing } from './riverBanks';
 import type { Block, WorldState } from '../sim/types';
 import { KERB_H, paveWidth, r01 } from './util';
 import { TREE_KINDS, type TreePlacement } from './sculptTrees';
@@ -40,8 +40,9 @@ export class CityLandscape {
     // 12: the original city's river, one continuous surface. 13: the elevated
     // railway's dark riveted iron.
     // 14: the worn off-white paint of the avenues' lane lines.
+    // 15: the river's embankment walls, weathered granite.
     const materials = [0x7f9067, 0xb9b29b, 0x416b69, 0x414c43, 0x695847, 0x394b35, 0x526347, 0x7e817a, 0x414c43,
-      0x8a8576, 0x75695b, 0xaaa18d, 0x416b69, 0x2c302d, 0xc9c3ad]
+      0x8a8576, 0x75695b, 0xaaa18d, 0x416b69, 0x2c302d, 0xc9c3ad, 0x57534b]
       .map((color, i) => i === 2 ? new PondWaterMaterial() : i === 12 ? new PondWaterMaterial(true)
         : new THREE.MeshStandardMaterial({ color, roughness: i === 13 ? .7 : .93, metalness: i === 7 ? .35 : i === 13 ? .3 : 0 }));
     this.materials = materials;
@@ -199,8 +200,33 @@ export class CityLandscape {
         // at a bridge are its parapets.
         const { water: wr, railings } = riverBank(w, b);
         const sheet = new THREE.PlaneGeometry(wr.w, wr.h).rotateX(-Math.PI / 2);
-        add(sheet, 12, wr.x + wr.w / 2, .03, wr.y + wr.h / 2);
+        // Down in its channel; the street surface opens over it (RoadSurfaceMaterial).
+        add(sheet, 12, wr.x + wr.w / 2, RIVER_LEVEL, wr.y + wr.h / 2);
         riverRects.push(wr);
+        // Where the avenue's tramway crosses the river, its rails ride an iron
+        // deck over the sunken channel (the street decks are at the cell's edges).
+        if (crossing) for (const route of cityTramLines(w)) {
+          const pts = route.points;
+          if (pts.length !== 2 || (pts[0].x !== pts[1].x && pts[0].y !== pts[1].y)) continue;
+          const alongX = pts[0].y === pts[1].y, fixed = alongX ? pts[0].y : pts[0].x;
+          if (Math.floor(fixed / CELL) !== (alongX ? b.gy : b.gx)) continue;
+          const span = (alongX ? wr.w : wr.h) + 1.2, mid = alongX ? wr.x + wr.w / 2 : wr.y + wr.h / 2, width = 6.4;
+          const at = (along: number, across: number) => alongX ? [mid + along, fixed + across] as const : [fixed + across, mid + along] as const;
+          const deck = (kind: number, across: number, y: number, w: number, h: number) => {
+            const [x, z] = at(0, across);
+            box(kind, x, y, z, alongX ? span : w, h, alongX ? w : span);
+          };
+          deck(13, 0, -.24, width, .46);                    // deck plate
+          for (const side of [-1, 1]) {
+            deck(13, side * (width / 2 - .2), -.75, .3, .9);  // plate girders
+            const [x0, z0] = at(-span / 2, side * width / 2), [x1, z1] = at(span / 2, side * width / 2);
+            line(3, x0, z0, x1, z1, .9, .08, .08);            // handrail
+            for (let s = 0; s <= span; s += 2.5) {
+              const [px, pz] = at(-span / 2 + s, side * width / 2);
+              box(3, px, .45, pz, .1, .9, .1);
+            }
+          }
+        }
         for (const rl of railings) {
           const length = Math.hypot(rl.x1 - rl.x0, rl.y1 - rl.y0);
           for (let at = 0; at <= length; at += 3) {
@@ -377,6 +403,11 @@ export class CityLandscape {
         box(7, x, KERB_H + 3.1, z, .58, .38, .18, Math.atan2(d.x, d.y));
       }
     }
+    // Dressed-stone embankment walls round the whole sunken channel, from below
+    // the water up to the bank: bends, bank ends and bridge abutments included.
+    const bottom = RIVER_LEVEL - .4, top = KERB_H;
+    for (const p of embankmentWalls(riverRects, w.gridW * CELL, w.gridH * CELL))
+      box(15, p.x, (top + bottom) / 2, p.z, p.w, top - bottom, p.d);
     // The river's shading follows its whole channel: banks, bends and bridges.
     this.river?.setRiverMask(riverRects, w.gridW * CELL, w.gridH * CELL);
     batches.forEach((batch, i) => {
@@ -384,7 +415,7 @@ export class CityLandscape {
       const geometry = mergeGeometries(batch); batch.forEach(g => g.dispose());
       if (!geometry) throw Error('Invalid landscape geometry');
       const mesh = new THREE.Mesh(geometry, materials[i]); mesh.receiveShadow = true;
-      mesh.castShadow = [3, 4, 5, 6, 10, 11, 13].includes(i); this.group.add(mesh);
+      mesh.castShadow = [3, 4, 5, 6, 10, 11, 13, 15].includes(i); this.group.add(mesh);
     });
     if (cityTramLines(w).length) { this.trams = new StreetTrams(w); this.group.add(this.trams.group); }
   }
@@ -402,6 +433,34 @@ export class CityLandscape {
   /** Advance the elevated trains to simulated-clock time (they stop when paused). */
   updateTrains(simSeconds: number): void {
     this.trains?.update(simSeconds);
+  }
+
+  /**
+   * Swap the painted lawn for the photographed grass (src/render/textures.ts).
+   * Lawn UVs run one unit per 9 m; the grass tiles every 4.5 m. The shared
+   * art textures are cloned here, so disposing this landscape leaves them be.
+   */
+  setGrass(grass: { map: THREE.Texture; normal: THREE.Texture | null; roughness: THREE.Texture | null }): void {
+    const lawn = this.materials[0];
+    if (!lawn) return;
+    const tile = (source: THREE.Texture) => {
+      const t = source.clone();
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.repeat.set(2, 2);
+      t.needsUpdate = true;
+      this.textures.push(t);
+      return t;
+    };
+    lawn.map?.dispose();
+    this.textures = this.textures.filter(t => t !== lawn.map);
+    lawn.map = tile(grass.map);
+    lawn.normalMap = grass.normal ? tile(grass.normal) : null;
+    lawn.normalScale.set(.8, .8);
+    lawn.roughnessMap = grass.roughness ? tile(grass.roughness) : null;
+    lawn.roughness = 1;
+    // A slightly sun-faded, period lawn rather than a sports pitch.
+    lawn.color.setRGB(.92, .9, .78);
+    lawn.needsUpdate = true;
   }
 
   dispose(): void {

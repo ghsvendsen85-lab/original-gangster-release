@@ -61,7 +61,7 @@ import {FireDamageDecor} from './fireDamageDecor';
 import {rubbleGeometry,ruinRubble} from './rubble';
 import {SculptRubble,rubblePiles,type RubblePlacement} from './sculptRubble';
 import { bossInsideOffice, characterPriority, streetPersonVisible, useDetailedModels, carriesExplosives, workingInside } from './characterPresentation';
-import { characterInView, characterNeedsDetail, characterPixelHeight, DETAIL_KEEP_METRES, MAX_DETAILED_STREET_CHARACTERS } from './characterDetail';
+import { characterInView, characterNeedsDetail, characterPixelHeight, DETAIL_KEEP_METRES, MAX_DETAILED_CHARACTERS, MAX_DETAILED_STREET_CHARACTERS } from './characterDetail';
 import { previewActorMotion, previewStreetPosition, type PreviewActorMotion } from './previewActorMotion';
 import { kerbside, roadHeading } from '../sim/vehicleNavigation';
 import { previewVehicle } from '../sim/movement';
@@ -99,6 +99,8 @@ import {
   smoothstep,
 } from './util';
 import { peopleList, buildingList } from '../sim/entityLists';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { limitTextureSize, textureLimit } from './textureQuality';
 import { NaturalLight, naturalSunDirection } from './naturalLight';
 import { LAMP_POOL_SIZE, StreetLights, WINDOW_SPILL_DEPTH, lampPoolGeometry, lampPoolMaterial, windowSpillGeometry, windowSpillMaterial } from './streetLights';
 
@@ -135,6 +137,15 @@ const FREE_PITCH_DEFAULT = THREE.MathUtils.degToRad(38);
 /** How far past the target the free view looks for people, cars and sound. */
 const FREE_MAX_REACH = 700;
 const FREE_VIEW_KEY = 'og.freeView';
+/** The delivered motorcycle's saddle is a little further back and about 12 cm
+ * higher than the built one's (measured from motorcycle.glb's profile). */
+const DELIVERED_MOTORCYCLE_SEAT = { back: .35, drop: .02, saddle: .96 };
+/** The built motorcycle's saddle top (vehicles.ts), for a detailed rider. */
+const BUILT_MOTORCYCLE_SEAT = { ...MOTORCYCLE_SEAT, saddle: .835 };
+/** A seated rider's hip joint is this far above the saddle's top. */
+const RIDER_HIP_ABOVE_SADDLE = .1;
+/** Free view: beyond this distance from the eye, a figure's role no longer earns it a detailed model first. */
+const FREE_ROLE_DETAIL_METRES = 45;
 /** Half-width of a block's pavement slab. */
 const SLAB_HALF = BLOCK_SIZE / 2 + PAVE_W;
 /** Keep tyre soles just clear of the road, in metres. */
@@ -354,6 +365,11 @@ export class CityRenderer {
   private spillAt = new THREE.Vector3();
   private spillQuat = new THREE.Quaternion();
   private spillScale = new THREE.Vector3();
+  /** The delivered motorcycle's textures (disposed with the city), and where its rider sits. */
+  private motorcycleTextures: THREE.Texture[] = [];
+  private motorcycleSeat: { back: number; drop: number; saddle: number } = BUILT_MOTORCYCLE_SEAT;
+  /** The delivered city art, once loaded (later street rebuilds reuse it). */
+  private art: CityArt | null = null;
   private hydrants!: InstancePool;
   private trees!: InstancePool;
   private treeModels?: SculptTrees;
@@ -436,6 +452,8 @@ export class CityRenderer {
   /** Sky, world-fixed sun, image light and ambient occlusion for the free view. */
   private nature: NaturalLight | null = null;
   private ambientOcclusion = true;
+  /** Fully animated figures at once; the rest of the crowd uses simple figures. */
+  private detailedPeople = MAX_DETAILED_STREET_CHARACTERS;
   private width = 1;
   private height = 1;
 
@@ -610,6 +628,10 @@ export class CityRenderer {
       if (!f || !m) return;
       m.map = this.ownedTextures.replace(m.map, f.map);
       m.emissiveMap = this.ownedTextures.replace(m.emissiveMap, f.lights);
+      // Relief and gloss derived from the art (scripts/build-facade-maps.mjs):
+      // set-back windows with glossy glass, proud stone dressings, brick relief.
+      if (f.normal) { m.normalMap = this.ownedTextures.replace(m.normalMap, f.normal); m.normalScale.set(1, 1); }
+      if (f.roughness) { m.roughnessMap = this.ownedTextures.replace(m.roughnessMap, f.roughness); m.roughness = 1; }
       m.needsUpdate = true;
     });
     if (art.storefront) {
@@ -629,9 +651,23 @@ export class CityRenderer {
       this.plinthMat.needsUpdate = true;
     }
     if (art.pavement) {
-      this.paveTop.map = this.ownedTextures.replace(this.paveTop.map, art.pavement, (SLAB_HALF * 2) / 6, (SLAB_HALF * 2) / 6);
+      const slabs = (SLAB_HALF * 2) / 6;
+      this.paveTop.map = this.ownedTextures.replace(this.paveTop.map, art.pavement, slabs, slabs);
+      // The photographed concrete is a cool, light grey: weather it to the city's warm stone.
+      this.paveTop.color.setRGB(.9, .87, .8);
+      // Relief and wear: joints, pitting and smoother trodden slabs catch the low sun.
+      if (art.pavementNormal) {
+        this.paveTop.normalMap = this.ownedTextures.replace(this.paveTop.normalMap, art.pavementNormal, slabs, slabs);
+        this.paveTop.normalScale.set(.9, .9);
+      }
+      if (art.pavementRoughness) {
+        this.paveTop.roughnessMap = this.ownedTextures.replace(this.paveTop.roughnessMap, art.pavementRoughness, slabs, slabs);
+        this.paveTop.roughness = 1;
+      }
       this.paveTop.needsUpdate = true;
     }
+    this.art = art;
+    if (art.grass) this.landscape?.setGrass(art.grass);
     if (art.kerb) {
       this.kerbSide.map = this.ownedTextures.replace(this.kerbSide.map, art.kerb, (SLAB_HALF * 2) / 6, 1);
       this.kerbSide.needsUpdate = true;
@@ -652,6 +688,7 @@ export class CityRenderer {
       this.signMat.needsUpdate = true;
     }
     if (art.road) this.groundMat.setAsphalt(art.road);
+    if (art.roadNormal || art.roadRoughness) this.groundMat.setAsphaltDetail(art.roadNormal ?? null, art.roadRoughness ?? null);
     // Replace the fallback paint tint as soon as the photograph is available.
     if (art.storefront) this.refreshBuildings();
   }
@@ -1038,6 +1075,7 @@ export class CityRenderer {
     this.motorcycles.mesh.name = 'vehicle-motorcycle';
     this.headlamps = new InstancePool(vehicleLightGeometry(), this.headlampMat, capacity, { dynamic: true });
     for (const p of [this.sedans, this.trucks, this.speedsters, this.motorcycles, this.headlamps]) this.scene.add(p.mesh);
+    this.loadMotorcycleModel();
     // Delivered models are the default. Explicit switches retain the audit/fallback views.
     this.preferVehicleSprites = new URLSearchParams(window.location.search).get('vehicleSprites') === '1';
     if (this.preferVehicleSprites) this.ensureVehicleSprites();
@@ -1909,6 +1947,7 @@ export class CityRenderer {
     const w = this.world;
     this.landscape?.dispose();
     this.landscape = new CityLandscape(w, this.treeModels?.ready); this.scene.add(this.landscape.group);
+    if (this.art?.grass) this.landscape.setGrass(this.art.grass);
     const treePlacements: TreePlacement[] = [...this.landscape.trees];
     (this.ground.material as RoadSurfaceMaterial).legacyRails.value = w.cityLayout ? 0 : 1;
     (this.ground.material as RoadSurfaceMaterial).setLineNames(w.gridW + 1, w.gridH + 1, (axis, line) => streetNameIndex(w, axis, line));
@@ -1917,6 +1956,9 @@ export class CityRenderer {
       if (b?.layout?.use !== 'avenue' || avenueRoadway(b)) return { road: false };
       return { road: true, line: c === 34 || c === 41 ? 'x' : c === 35 || c === 37 ? 'y' : undefined };
     });
+    // The river's sunken channel: the street surface opens over the water.
+    const rivers = w.cityLayout ? w.blocks.map(b => b && (b.layout?.use === 'water' || riverCrossing(b)) ? riverBank(w, b) : null) : [];
+    (this.ground.material as RoadSurfaceMaterial).setRiverBlocks(w.gridW, w.gridH, rivers.find(Boolean)?.plot ?? 0, i => rivers[i]?.sides ?? null);
     this.pavement.reset();
     this.lamps.reset();
     this.lampGlow.reset();
@@ -2140,9 +2182,25 @@ export class CityRenderer {
     this.characterDetailStats = { bodyPixels, inView: 0, eligible: 0, detailed: 0, simplified: 0 };
     if (this.sculptModelsActive) {
       const lastDetailed = this.lastDetailedIds;
-      const detailDistance = (p: Person) => Math.hypot(p.pos.x - cx, p.pos.y - cz) - (lastDetailed.has(p.id) ? DETAIL_KEEP_METRES : 0);
+      // The isometric view shows everyone at one size, so nearness to the view's
+      // centre decides. In the free 3D view size falls off with distance from
+      // the eye: a low view along a street puts the biggest figures in the
+      // foreground, well short of the target, so nearness to the camera decides
+      // and each figure is measured at its own distance.
+      const eye = this.freeView ? this.freeCamera.position : null;
+      const fromEye = (x: number, z: number) => eye ? Math.hypot(x - eye.x, eye.y, z - eye.z) : 0;
+      const detailDistance = (p: Person) => (eye ? fromEye(p.pos.x, p.pos.y) : Math.hypot(p.pos.x - cx, p.pos.y - cz)) -
+        (lastDetailed.has(p.id) ? DETAIL_KEEP_METRES : 0);
+      // Role (your men, officials) ranks figures the player can make out; in
+      // the free view, specks on the horizon do not take the foreground's models.
+      // The selected person keeps their place at any distance.
+      const rolePriority = (p: Person) => {
+        const priority = characterPriority(p, this.selectedPersonId, null, viewer?.id ?? null);
+        return priority > 1 && eye && fromEye(p.pos.x, p.pos.y) > FREE_ROLE_DETAIL_METRES ? 5 : priority;
+      };
       const candidates = people.filter(p => {
-        if(p.inVehicle && !loadingShuttle(w, p, this.simClock)) return false;
+        // In a car the cabin hides them; a motorcyclist rides in the open.
+        if(p.inVehicle && !loadingShuttle(w, p, this.simClock) && vehicleForPerson(w, p) !== 'motorcycle') return false;
         // A cheap reach test first: exact preview positions for all 8,000+
         // people each frame were a measurable share of Street View's time.
         // Open Tagged windows add their own patches of street to the reach.
@@ -2152,12 +2210,12 @@ export class CityRenderer {
         this.projScratch.set(pos.x,streetSurfaceHeight(this.world, pos.x,pos.y)+1,pos.y).project(this.camera);
         const inMainView = characterInView(this.projScratch);
         if (inMainView) visibleIds.add(p.id);
-        return inTaggedView || inMainView && characterNeedsDetail(bodyPixels, p.id === this.selectedPersonId || watchedIds.has(p.id));
+        const pixels = eye ? characterPixelHeight(this.camera, this.height, fromEye(pos.x, pos.y)) : bodyPixels;
+        return inTaggedView || inMainView && characterNeedsDetail(pixels, p.id === this.selectedPersonId || watchedIds.has(p.id));
       });
-      candidates.sort((a,b)=>Number(!!burning(b))-Number(!!burning(a)) || Number(watchedIds.has(b.id))-Number(watchedIds.has(a.id)) || Number(this.characterActions.get(b.id)?.kind==='throw')-Number(this.characterActions.get(a.id)?.kind==='throw') || (this.actionsEnabled?Number(this.characterActions.has(b.id))-Number(this.characterActions.has(a.id)):0) || characterPriority(a,this.selectedPersonId,null,viewer?.id??null)-
-        characterPriority(b,this.selectedPersonId,null,viewer?.id??null) ||
+      candidates.sort((a,b)=>Number(!!burning(b))-Number(!!burning(a)) || Number(watchedIds.has(b.id))-Number(watchedIds.has(a.id)) || Number(this.characterActions.get(b.id)?.kind==='throw')-Number(this.characterActions.get(a.id)?.kind==='throw') || (this.actionsEnabled?Number(this.characterActions.has(b.id))-Number(this.characterActions.has(a.id)):0) || rolePriority(a)-rolePriority(b) ||
         detailDistance(a)-detailDistance(b) || a.id-b.id);
-      candidates.slice(0,MAX_DETAILED_STREET_CHARACTERS).forEach(p=>hdIds.add(p.id));
+      candidates.slice(0,this.detailedPeople).forEach(p=>hdIds.add(p.id));
       this.lastDetailedIds = hdIds;
       this.characterDetailStats.inView = visibleIds.size;
       this.characterDetailStats.eligible = candidates.length;
@@ -2278,10 +2336,21 @@ export class CityRenderer {
       }
       else if (vehicle === 'motorcycle') {
         // The rider sits astride the saddle, in the open whatever the model set.
-        this.dummy.position.set(pos.x - Math.sin(facing) * MOTORCYCLE_SEAT.back, surface - MOTORCYCLE_SEAT.drop, pos.y - Math.cos(facing) * MOTORCYCLE_SEAT.back);
-        this.dummy.scale.setScalar(1);
+        const seat = this.motorcycleSeat;
+        const seatX = pos.x - Math.sin(facing) * seat.back, seatZ = pos.y - Math.cos(facing) * seat.back;
+        // Near the camera, a detailed figure in the riding pose, hips on the saddle.
+        this.dummy.position.set(seatX, surface, seatZ);
+        this.dummy.scale.setScalar(CHARACTER_SCALE);
         this.dummy.updateMatrix();
-        this.actors.push(p, this.dummy.matrix, this.colorScratch, 0, -1);
+        const detailedRider = hdIds.has(p.id) && !!this.sculptModels?.pushCharacter(p.id, actorStyleFor(p), this.dummy.matrix, 0, false,
+          { role: p.role, coat: hex }, { clock: this.simClock, delta: this.actionDelta, seat: { hipY: surface + seat.saddle + RIDER_HIP_ABOVE_SADDLE } });
+        if (!detailedRider) {
+          this.dummy.position.set(seatX, surface - seat.drop, seatZ);
+          this.dummy.scale.setScalar(1);
+          this.dummy.updateMatrix();
+          this.actors.push(p, this.dummy.matrix, this.colorScratch, 0, -1);
+        }
+        if (visibleIds.has(p.id)) this.characterDetailStats[detailedRider ? 'detailed' : 'simplified']++;
       }
       else if (vehicle === 'speedster' && !this.sculptModelsActive) {
         this.dummy.position.set(pos.x - Math.sin(facing) * .72, surface - .10, pos.y - Math.cos(facing) * .72);
@@ -2461,7 +2530,9 @@ export class CityRenderer {
       this.dummy.scale.setScalar(1);
       this.dummy.updateMatrix();
       this.colorScratch.setHex(d.hex);
-      if (d.kind === 'motorcycle') this.motorcycles.push(this.dummy.matrix, this.colorScratch);
+      // The delivered motorcycle carries its own paint: the gang colour is a wash over it.
+      if (d.kind === 'motorcycle') this.motorcycles.push(this.dummy.matrix, this.motorcycleTextures.length
+        ? this.tintScratch.setRGB(1, 1, 1).lerp(this.colorScratch, .35) : this.colorScratch);
       else if (spriteMode && (d.kind !== 'speedster' || this.reviewSpeedsterSprite))
         this.vehicleSprites!.push(d.kind, d.x, d.z, d.facing - Math.PI / 2);
       else if (this.sculptModelsActive && this.sculptModels?.pushVehicle(d.kind, this.dummy.matrix)) { /* Detailed vehicle */ }
@@ -3272,6 +3343,37 @@ export class CityRenderer {
     for (const view of this.tagged.views.values()) this.renderTaggedView(view);
   }
 
+  /**
+   * The delivered motorcycle (public/art/city/sculpt/motorcycle.glb, prepared
+   * with scripts/prepare-model.mjs: front +x, on the ground, in metres) takes
+   * over the built one in the same instanced pool; until it loads, or if it
+   * fails, the built motorcycle stays.
+   */
+  private loadMotorcycleModel(): void {
+    new GLTFLoader().loadAsync(`${import.meta.env.BASE_URL}art/city/sculpt/motorcycle.glb`).then((gltf) => {
+      let model: THREE.Mesh | null = null;
+      gltf.scene.traverse((o) => { if (!model && (o as THREE.Mesh).isMesh) model = o as THREE.Mesh; });
+      const mesh = model as THREE.Mesh | null;
+      if (!mesh || this.disposed || !this.motorcycles) return;
+      const material = mesh.material as THREE.MeshStandardMaterial;
+      const textures = [material.map, material.normalMap, material.roughnessMap, material.metalnessMap, material.aoMap]
+        .filter((t, i, all): t is THREE.Texture => !!t && all.indexOf(t) === i);
+      for (const t of textures) limitTextureSize(t, textureLimit());
+      const pool = this.motorcycles.mesh;
+      pool.geometry.dispose();
+      pool.geometry = mesh.geometry;
+      pool.material = material;
+      this.motorcycleTextures = textures;
+      this.motorcycleSeat = DELIVERED_MOTORCYCLE_SEAT;
+      this.preparationRevision++;
+    }).catch(() => { /* the built motorcycle stays */ });
+  }
+
+  /** How many fully animated figures the street may show at once (Options). */
+  setDetailedPeople(count: number): void {
+    this.detailedPeople = Math.max(8, Math.min(MAX_DETAILED_CHARACTERS, Math.round(count)));
+  }
+
   /** Screen-space ambient occlusion in the free 3D view (Options). */
   setAmbientOcclusion(on: boolean): void {
     this.ambientOcclusion = on;
@@ -3549,6 +3651,7 @@ export class CityRenderer {
     if (!this.lampGlow) this.glowMat?.dispose();
     this.lampPoolMat?.dispose();
     this.windowSpillMat?.dispose();
+    for (const t of this.motorcycleTextures) t.dispose();
     this.streetLights?.dispose();
     if (!this.headlamps) this.headlampMat?.dispose();
     this.clearBuildingViews();
