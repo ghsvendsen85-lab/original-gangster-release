@@ -60,7 +60,7 @@ import { prepareScene } from './prepareScene';
 import { yieldForInput } from '../yieldForInput';
 import { yieldForPaint } from '../yieldForPaint';
 import { waitForGpu } from './waitForGpu';
-import { patchInstancedUv, patchRoofUv } from './materialUv';
+import { patchInstancedUv, patchRoofUv, windowLife } from './materialUv';
 import { ActorLayer, ActorMotion, actorStyleFor } from './actorLayer';
 import { CharacterActions,liveCharacterAction } from './characterActions';
 import { CityEffects } from './cityEffects';
@@ -3243,6 +3243,8 @@ export class CityRenderer {
     const carLights = this.effects.headlights ? Math.max(dusk, smoothstep(.4, .8, this.rainNow) * .6) : 0;
     this.vehicleLights?.setStrength(carLights, this.wetNow);
     this.neon?.update(this.clock, this.effects.neon ? lightUp : 0, 1 - night * .85, this.effects.neon);
+    windowLife.time.value = this.clock;
+    windowLife.amount.value = this.effects.windows ? 1 : 0;
     this.landscape?.setWaterEffects(this.effects.water ? 1 : 0, this.rainNow);
     // Rain lit by the sky by day and by the lamps at night.
     this.rainLight.setRGB(.6, .64, .7).multiplyScalar(lerp(1, .5, night)).add(paintScratch.setRGB(.2, .15, .08).multiplyScalar(night));

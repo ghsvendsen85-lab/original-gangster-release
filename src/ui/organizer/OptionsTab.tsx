@@ -231,6 +231,7 @@ export function OptionsTab() {
           ['water', 'River reflections and foam', 'The city mirrored in the river in the 3D view (costs frame rate), and foam along the walls.'],
           ['smoke', 'Smoke and steam', 'Chimney smoke, steam from the street, exhaust, gun smoke and river mist.'],
           ['neon', 'Neon signs', 'Neon over shops and cafés, lit after dusk.'],
+          ['windows', 'Window life at night', 'Lit windows vary: blinds half drawn, somebody at the window, a lamp that flickers, some homes dark.'],
           ['film', 'Film look', 'Sepia grading, film grain and a vignette, like an old picture.'],
         ] as const).map(([key, label, note]) => (
           <div key={key}>

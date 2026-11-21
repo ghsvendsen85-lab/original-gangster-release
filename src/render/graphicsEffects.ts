@@ -21,10 +21,12 @@ export interface GraphicsEffects {
   neon: boolean;
   /** A 1920s film look: sepia grading, grain and a vignette. */
   film: boolean;
+  /** Life behind lit windows at night: blinds, figures, flickering lamps. */
+  windows: boolean;
 }
 
 export const DEFAULT_EFFECTS: GraphicsEffects = {
-  rain: 'changing', headlights: true, water: true, smoke: true, neon: true, film: false,
+  rain: 'changing', headlights: true, water: true, smoke: true, neon: true, film: false, windows: true,
 };
 
 export const RAIN_MODES: readonly RainMode[] = ['off', 'changing', 'always'];
@@ -35,7 +37,7 @@ export function normaliseEffects(raw: unknown): GraphicsEffects {
   if (!raw || typeof raw !== 'object') return e;
   const r = raw as Record<string, unknown>;
   if (RAIN_MODES.includes(r.rain as RainMode)) e.rain = r.rain as RainMode;
-  for (const k of ['headlights', 'water', 'smoke', 'neon', 'film'] as const) if (typeof r[k] === 'boolean') e[k] = r[k] as boolean;
+  for (const k of ['headlights', 'water', 'smoke', 'neon', 'film', 'windows'] as const) if (typeof r[k] === 'boolean') e[k] = r[k] as boolean;
   return e;
 }
 
