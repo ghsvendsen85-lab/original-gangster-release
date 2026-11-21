@@ -507,6 +507,7 @@ export class CityRenderer {
 
   private raycaster = new THREE.Raycaster();
   private pointer = new THREE.Vector2();
+  private pickScratch = new THREE.Vector3();
   private projScratch = new THREE.Vector3();
   private dummy = new THREE.Object3D();
   private colorScratch = new THREE.Color();
@@ -546,6 +547,11 @@ export class CityRenderer {
   private rainCentre = new THREE.Vector3();
   /** The person the camera rides along with (null: free). */
   private followId: ID | null = null;
+  /** Where each drawn person stands (x, chest height, z), in agentIds order: for picking by screen distance. */
+  private agentSpots: number[] = [];
+  /** The person under the pointer, ringed faintly (hover). */
+  private hoverHalo: THREE.Mesh | null = null;
+  private hoverId: ID | null = null;
 
   constructor(canvas: HTMLCanvasElement, world: WorldState, deferConstruction = false) {
     this.world = world;
@@ -2186,7 +2192,7 @@ export class CityRenderer {
 
   private refreshAgents(): void {
     const w = this.world;
-    this.agentIds = [];
+    this.agentIds = []; this.agentSpots = [];
     this.burningPeople?.reset();
     this.emergencyHoses?.reset();
     this.actors.reset();
@@ -2415,6 +2421,7 @@ export class CityRenderer {
         this.actors.push(p, this.dummy.matrix, this.colorScratch, 0, -1);
       }
       this.agentIds.push(p.id);
+      this.agentSpots.push(pos.x, surface + (driving ? .9 : 1), pos.y);
 
       if (own) {
         this.dummy.position.set(pos.x, surface + .022, pos.y);
@@ -2854,7 +2861,7 @@ export class CityRenderer {
     this.headlamps.mesh.visible = open;
     if (!open) {
       this.agentMesh.count = 0;
-      this.agentIds = [];
+      this.agentIds = []; this.agentSpots = [];
       this.burningPeople?.reset();
       this.burningPeople?.commit();
       this.emergencyHoses?.reset();
@@ -3477,7 +3484,8 @@ export class CityRenderer {
     if (this.streetsOpen) {
       this.refreshAgents();
       this.refreshTraffic(dusk);
-    }
+      this.placeHover();
+    } else if (this.hoverHalo) this.hoverHalo.visible = false;
   }
 
   isPrepared(): boolean {
@@ -3590,6 +3598,62 @@ export class CityRenderer {
   /** How many fully animated figures the street may show at once (Options). */
   setDetailedPeople(count: number): void {
     this.detailedPeople = Math.max(8, Math.min(MAX_DETAILED_CHARACTERS, Math.round(count)));
+  }
+
+  /** The drawn person nearest the pointer on screen, within `tolerance` pixels and not behind a building. */
+  private nearestOnScreen(rect: DOMRect, tolerance: number): ID | null {
+    let best: ID | null = null, nearest = tolerance;
+    const v = this.pickScratch, eye = this.camera.position;
+    for (let i = 0; i < this.agentIds.length; i++) {
+      v.set(this.agentSpots[i * 3], this.agentSpots[i * 3 + 1], this.agentSpots[i * 3 + 2]);
+      const far = v.distanceTo(eye);
+      v.project(this.camera);
+      if (v.z < -1 || v.z > 1) continue;
+      const d = Math.hypot((v.x - this.pointer.x) * rect.width / 2, (v.y - this.pointer.y) * rect.height / 2);
+      if (d >= nearest) continue;
+      // Hidden behind a wall: the pointer's ray meets a building first.
+      if (this.picks.mesh.count > 0) {
+        const wall = this.raycaster.intersectObject(this.picks.mesh, false)[0];
+        if (wall && wall.distance < far - 2) continue;
+      }
+      nearest = d; best = this.agentIds[i];
+    }
+    return best;
+  }
+
+  /**
+   * The pointer is over the city (not dragging): ring the person under it
+   * faintly. Returns what is there, so the view can show a hand.
+   */
+  hover(clientX: number, clientY: number, rect: DOMRect): PickResult | null {
+    if (!this.hoverHalo) {
+      const ring = new THREE.RingGeometry(.5, .58, 40).rotateX(-Math.PI / 2);
+      this.hoverHalo = new THREE.Mesh(ring, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: .55, depthTest: false, depthWrite: false, toneMapped: false }));
+      this.hoverHalo.renderOrder = 11;
+      this.hoverHalo.visible = false;
+      this.scene.add(this.hoverHalo);
+    }
+    const hit = this.pick(clientX, clientY, rect);
+    this.hoverId = hit.personId != null && hit.personId !== this.selectedPersonId ? hit.personId : null;
+    this.placeHover();
+    return hit;
+  }
+
+  clearHover(): void {
+    this.hoverId = null;
+    if (this.hoverHalo) this.hoverHalo.visible = false;
+  }
+
+  private placeHover(): void {
+    if (!this.hoverHalo) return;
+    const i = this.hoverId == null ? -1 : this.agentIds.indexOf(this.hoverId);
+    this.hoverHalo.visible = i >= 0;
+    if (i < 0) return;
+    const y = this.agentSpots[i * 3 + 1];
+    this.hoverHalo.position.set(this.agentSpots[i * 3], y - (y > 0 ? 1 : 0) + .03, this.agentSpots[i * 3 + 2]);
+    // Big enough to see on a distant figure.
+    this.hoverHalo.scale.setScalar(Math.max(CHARACTER_SCALE * 1.15, this.hoverHalo.position.distanceTo(this.camera.position) * .012));
+    this.hoverHalo.updateMatrixWorld();
   }
 
   /** Is any of the river within reach of the free view? */
@@ -3790,6 +3854,9 @@ export class CityRenderer {
         result.personId = this.agentIds[hits[0].instanceId] ?? null;
       }
     }
+    // Missed by a hair (a distant figure in the 3D view is a few pixels tall):
+    // the nearest person to the pointer on screen, within a finger's width.
+    if (this.streetsOpen && result.personId == null) result.personId = this.nearestOnScreen(rect, 14);
     if (this.picks.mesh.count > 0) {
       const hits = this.raycaster.intersectObject(this.picks.mesh, false);
       if (hits.length && hits[0].instanceId != null) {
@@ -3827,6 +3894,7 @@ export class CityRenderer {
     this.ownedTextures.dispose();
     this.nature?.dispose();
     this.reflection?.dispose();
+    if (this.hoverHalo) { this.hoverHalo.geometry.dispose(); (this.hoverHalo.material as THREE.Material).dispose(); }
     this.rainFall?.dispose();
     this.vehicleLights?.dispose();
     this.smoke?.dispose();

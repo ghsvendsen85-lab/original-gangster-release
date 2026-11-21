@@ -49,6 +49,7 @@ export function CityView() {
   const boxStart = useRef({ x: 0, y: 0 });
   const boxRef = useRef<HTMLDivElement | null>(null);
   const lastPointer = useRef({ x: 0, y: 0 });
+  const hoverAt = useRef(0);
 
   const sim = useGame((s) => s.sim);
   const streetLoading = useGame((s) => s.streetLoading);
@@ -360,6 +361,16 @@ export function CityView() {
       }
       return;
     }
+    if (!dragging.current && rendererRef.current) {
+      // Hover: a faint ring on the person under the pointer, and a hand over anything that can be clicked.
+      const now = performance.now();
+      if (now - hoverAt.current > 60) {
+        hoverAt.current = now;
+        const canvas = e.currentTarget, hit = rendererRef.current.hover(e.clientX, e.clientY, canvas.getBoundingClientRect());
+        canvas.style.cursor = !useGame.getState().pickMode && hit && (hit.personId != null || hit.buildingId != null) ? 'pointer' : '';
+      }
+      return;
+    }
     if (!dragging.current || !rendererRef.current) return;
     const dx = e.clientX - lastPointer.current.x;
     const dy = e.clientY - lastPointer.current.y;
@@ -456,6 +467,7 @@ export function CityView() {
       className={`city-canvas${pickMode ? ' picking' : ''}`}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
+      onPointerLeave={(e) => { rendererRef.current?.clearHover(); e.currentTarget.style.cursor = ''; }}
       onPointerUp={onPointerUp}
       onPointerCancel={() => { boxing.current = false; dragging.current = false; dragMoved.current = true; if (boxRef.current) boxRef.current.hidden = true; }}
       onWheel={onWheel}
