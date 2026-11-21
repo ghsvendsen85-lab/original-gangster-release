@@ -3679,8 +3679,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .lieutenant-planning .team-head .row { gap: 6px !important; }
 .lieutenant-planning .counters { gap: 4px 10px; margin-top: 3px; font-size: 12px; }
 .lieutenant-planning .counters b { font-size: 16px; }
-.lieutenant-planning .counters > span { font-size: 19px; display: inline-flex; align-items: center; gap: 5px; }
-.lieutenant-planning .counters > span b { font-size: 28px; }
+.lieutenant-planning .counters > span { font-size: 13px; display: inline-flex; align-items: center; gap: 5px; }
+.lieutenant-planning .counters > span b { font-size: 20px; }
 .lieutenant-planning .pay-lines { min-width: 60px; }
 .lieutenant-planning .pay-lines b { font-size: 20px; }
 .lieutenant-planning .team-buttons { gap: 4px; margin-top: 8px; }
