@@ -21,8 +21,14 @@ const SECTIONS: { id: NewsItem['section']; label: string }[] = [
 /** The week's paper: an engraved masthead, a lead with a halftone photograph, the rest in columns. */
 export function NewspaperTab() {
   const sim = useGame((s) => s.sim)!;
+  const setDebrief = useGame((s) => s.setDebrief);
   useGame((s) => s.version);
-  return <NewspaperContent sim={sim} />;
+  return <>
+    {sim.world.phase === 'planning' && sim.world.week > 1 && (
+      <button className="btn sm debrief-reopen" onClick={() => setDebrief(true)}>Read last week's debriefing</button>
+    )}
+    <NewspaperContent sim={sim} />
+  </>;
 }
 
 export function NewspaperContent({ sim }: { sim: Sim }) {

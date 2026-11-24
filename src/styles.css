@@ -4629,3 +4629,26 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 /* What an order will cost, when the safe cannot cover it. */
 .job-short { color: var(--red); font-weight: 500; }
+
+/* Businesses tab: the whole card opens the business. */
+.business-row { cursor: pointer; }
+.business-row .name { display: block; }
+.business-row:focus-visible { outline: 2px solid var(--brass-line); outline-offset: 1px; }
+
+/* Building panel: the manager chosen from the free hoods between weeks. */
+.kv.manager-pick { align-items: center; }
+.kv.manager-pick select { max-width: 62%; font: inherit; font-size: 12px; font-weight: 600; padding: 2px 4px; background: rgba(255,255,255,.55); border: 1px solid var(--rule); border-radius: 3px; color: inherit; cursor: pointer; }
+
+/* End-of-week debriefing (playtest, 23 November). */
+.debrief { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 22px; }
+.debrief section { min-width: 0; }
+.debrief .kicker { margin-bottom: 4px; }
+.debrief .kv > span:last-child { display: inline-flex; gap: 6px; align-items: center; }
+.debrief-total { font-weight: 700; }
+.debrief-line { margin-top: 3px; }
+.debrief-events { grid-column: 1 / -1; }
+.debrief-events ul { margin: 0; padding-left: 18px; max-height: 180px; overflow: auto; }
+.debrief-events li { margin: 2px 0; }
+.debrief-reopen { margin-bottom: 8px; }
+@media (max-width: 620px) { .debrief { grid-template-columns: 1fr; } }
+

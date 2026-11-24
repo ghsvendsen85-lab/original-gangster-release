@@ -7,6 +7,7 @@ import type { Rng } from '../rng';
 import type { CourtCase, CrimeRecord, ID, OrderType, WorldState } from '../types';
 import { allBuildings } from '../world';
 import { peopleList } from '../entityLists';
+import { backFromPrison } from '../prison';
 
 /**
  * Police work, arrests and the courts. Trials are a contest between your lawyer
@@ -284,6 +285,7 @@ function releasePrisoners(w: WorldState): void {
       p.status = 'active';
       p.wanted = Math.max(0, p.wanted - 40);
       w.weekLog.push(`${p.name} was released from prison.`);
+      backFromPrison(w, p);
     }
   }
 }

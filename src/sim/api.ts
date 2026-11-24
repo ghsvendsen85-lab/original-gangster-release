@@ -22,7 +22,7 @@ import { businessFrontReady, resetBusinessInvestigation } from './businessState'
 import { recoverExportGoods } from './exportGoods';
 import { centreLotNeedsFront, purchasablePremisesType } from './premises';
 import { donationAmount, donationTarget } from './charity';
-import { alight, releaseTransportOrder, removeFleetVehicle, sendHome } from './transport';
+import { alight, dismount, releaseTransportOrder, removeFleetVehicle, sendHome } from './transport';
 import { availableSpecialist, reclaimStaffVehicle } from './specialists';
 import { cancelSpecialistVisits, queueSpecialistJob } from './specialistJobs';
 export { bribePrice } from './officials';
@@ -70,7 +70,7 @@ import { CELL, GO_STRAIGHT_ASSETS } from './constants';
 
 import { clearDestination, setDestination } from './movement';
 import { canonicalAreaBlocks, lieutenantAreaChoices } from './lieutenantAreas';
-import { CENTRE_LOT, allBuildings, buildingDoor, dist, gangAssets, ownedBuildings, teamsOf, territoryBlocks } from './world';
+import { CENTRE_LOT, allBuildings, buildingDoor, dist, gangAssets, ownedBuildings, teamsOf, territoryBlocks, placeName } from './world';
 import { peopleList } from './entityLists';
 import { quitGangPayroll } from './payrollMark';
 import { inCustody } from './prison';
@@ -1442,4 +1442,61 @@ export function setWaiting(w: WorldState, orderId: ID, waiting: boolean): ApiRes
 /** How much of a team's week is already committed, 0..1. */
 export function teamTimeFraction(team: Team): number {
   return Math.min(1, team.timeUsed / MINUTES_PER_WEEK);
+}
+
+/** Hoods who could take over a business from the planning desk: free of
+ * custody, of any other premises, and of a job in hand; pool first, then crews. */
+export function managerChoices(w: WorldState, gangId: ID): Person[] {
+  const gang = w.gangs[gangId];
+  if (!gang) return [];
+  const ids = [...gang.poolIds, ...gang.teamIds.flatMap(t => w.teams[t]?.memberIds ?? [])];
+  return ids.map(id => w.people[id]).filter((p): p is Person => !!p && p.gangId === gangId && p.role === 'hood' &&
+    p.status === 'active' && p.buildingId == null && p.orderId == null && !p.streetOrder);
+}
+
+/**
+ * Put a hood in charge of one of the gang's businesses straight from the
+ * planning desk (playtest, 23 November), without a Run Business order: he
+ * leaves the pool or his crew for the premises, and the man he replaces goes
+ * back to the pool. The takings are not lost: it is a handover, not a recall.
+ */
+export function setManager(w: WorldState, gangId: ID, buildingId: ID, personId: ID): ApiResult {
+  const gang = w.gangs[gangId];
+  const b = w.buildings[buildingId];
+  const p = w.people[personId];
+  if (!gang || !b || b.ownerGangId !== gangId) return fail('That is not one of your businesses.');
+  if (w.phase !== 'planning') return fail('Managers are changed at the planning desk, between weeks.');
+  if (b.state === 'destroyed') return fail('The site is gone.');
+  if (b.managerId === personId) return ok();
+  if (!p || p.gangId !== gangId || p.role !== 'hood') return fail('Choose one of your hoods.');
+  if (inCustody(p)) return fail(`${p.name} is held by the law.`);
+  if (!managerChoices(w, gangId).includes(p)) return fail(`${p.name} is not free to take it over.`);
+  // The man he replaces goes back to the pool.
+  const old = b.managerId != null ? w.people[b.managerId] : undefined;
+  if (old) {
+    old.buildingId = null;
+    old.teamId = null;
+    old.pos = buildingDoor(w, b);
+    if (!gang.poolIds.includes(old.id)) gang.poolIds.push(old.id);
+  }
+  // Off his crew (or the pool) and into the premises.
+  const team = p.teamId != null ? w.teams[p.teamId] : undefined;
+  if (team) {
+    team.memberIds = team.memberIds.filter(id => id !== p.id);
+    for (const oid of team.orderIds) {
+      const o = w.orders[oid];
+      if (o?.opts.preferredHoodId === p.id) o.opts.preferredHoodId = null;
+    }
+  }
+  gang.poolIds = gang.poolIds.filter(id => id !== p.id);
+  p.teamId = null;
+  dismount(w, p);
+  p.buildingId = b.id;
+  p.pos = { ...w.lots[b.lotId].center };
+  p.dest = null;
+  p.path = [];
+  b.managerId = p.id;
+  if (team) reestimateTeamOrders(w, team);
+  return ok(old ? `${p.name} takes over ${placeName(w, b)} from ${old.name}, who goes back to the pool.`
+    : `${p.name} now runs ${placeName(w, b)}.`);
 }

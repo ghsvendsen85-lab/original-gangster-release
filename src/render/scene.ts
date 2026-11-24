@@ -69,6 +69,7 @@ import {fireDamageStage} from '../sim/buildingDamage';
 import {FireDamageDecor} from './fireDamageDecor';
 import {rubbleGeometry,ruinRubble} from './rubble';
 import {SculptRubble,rubblePiles,type RubblePlacement} from './sculptRubble';
+import { atHomeAsleep, bedtimeShare, hourNow } from '../sim/cityHours';
 import { bossInsideOffice, characterPriority, streetPersonVisible, useDetailedModels, carriesExplosives, workingInside } from './characterPresentation';
 import { characterInView, characterNeedsDetail, characterPixelHeight, DETAIL_KEEP_METRES, MAX_DETAILED_CHARACTERS, MAX_DETAILED_STREET_CHARACTERS } from './characterDetail';
 import { previewActorMotion, previewStreetPosition, type PreviewActorMotion } from './previewActorMotion';
@@ -2241,7 +2242,10 @@ export class CityRenderer {
       if (!doors) officeDoorsByGang.set(gangId, doors = officeDoors(w, gangId));
       return doors;
     };
-    const people = this.peopleNear(areas, watchedIds).filter(p => near(p) && (burning(p)?
+    // After midnight most townsfolk are at home in bed (cityHours.ts), unless picked out.
+    const hourOfNight = hourNow(w), bedtime = bedtimeShare(hourOfNight) > 0;
+    const inBed = (p: Person) => bedtime && p.id !== this.selectedPersonId && !watchedIds.has(p.id) && atHomeAsleep(w, p, hourOfNight);
+    const people = this.peopleNear(areas, watchedIds).filter(p => near(p) && !inBed(p) && (burning(p)?
       escapeSample(burning(p)!,w.minute+this.subMinute).time>=0:
       !bossInsideOffice(p) && !workingInside(w, p) && !(p.gangId != null && atOffice(w, p, doorsOf(p.gangId))) && (streetPersonVisible(p, watchedIds.has(p.id) ? p.id : this.selectedPersonId) || meeting.has(p.id) ||
       (this.actionsEnabled && this.characterActions.has(p.id) || this.characterActions.hasDeath(p.id)) && !p.inVehicle && p.status!=='jailed' && p.status!=='kidnapped')));

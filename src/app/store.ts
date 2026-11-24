@@ -66,6 +66,7 @@ export type OrganizerSheet =
   | { kind: 'vehicles' }
   | { kind: 'recruits' }
   | { kind: 'prison' }
+  | { kind: 'businesses' }
   | { kind: 'person'; id: ID }
   | { kind: 'clipboard' };
 
@@ -142,6 +143,9 @@ interface GameState {
   /** Covers order dispatch and the first prepared street frame; never saved. */
   streetLoading: boolean;
   setStreetLoading: (loading: boolean) => void;
+  /** The end-of-week debriefing is open (playtest, 23 November); never saved. */
+  debrief: boolean;
+  setDebrief: (open: boolean) => void;
   messageFilter: Record<MessageCategory, boolean>;
   messageBox: MessageCategory | null;
   /** When on, incoming messages no longer slow the clock. */
@@ -316,6 +320,7 @@ function freshWorldUi() {
     overlays: ['territory'] as OverlayKind[], organizerCollapsed: false,
     sheet: null, planningView: 'plan' as const, speed: 1, paused: false, weekOrders: false,
     finishingWeek: false, savingToQuit: false, savingSnapshot: false, loadingSave: null, streetLoading: false, messageOverride: false, toast: null, cameraRequest: null,
+    debrief: false,
   };
 }
 
@@ -362,6 +367,8 @@ export const useGame = create<GameState>((set, get) => ({
   loadingSave: null,
   streetLoading: false,
   setStreetLoading: (streetLoading) => set({ streetLoading }),
+  debrief: false,
+  setDebrief: (debrief) => set({ debrief }),
   messageFilter: { combat: true, police: true, failed: true, waiting: true },
   messageBox: null,
   setMessageBox: (messageBox) => set({messageBox}),
@@ -837,7 +844,7 @@ export const useGame = create<GameState>((set, get) => ({
       }
       get().bump();
       if (sim.world.phase === 'gameOver') set({ screen: 'gameOver' });
-      else get().setTab('newspaper');
+      else { get().setTab('newspaper'); set({ debrief: true }); }
       void get().autosave(true);
     }
   },
@@ -862,7 +869,7 @@ export const useGame = create<GameState>((set, get) => ({
         lastUi = performance.now();
       }
     }
-    if (sim.world.phase === 'planning') get().setTab('newspaper');
+    if (sim.world.phase === 'planning') { get().setTab('newspaper'); set({ debrief: true }); }
     set({ finishingWeek: false, paused: false, screen: sim.world.phase === 'gameOver' ? 'gameOver' : 'game' });
     await get().autosave(true);
   },

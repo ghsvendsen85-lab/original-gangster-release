@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ArtImage } from './ArtImage';
 import { act, useGame } from '../app/store';
-import { quoteBuildingSale, recallManager, repairBuilding, sackManager, sellBuilding, setPay, setTrading, shutdownBuilding } from '../sim/api';
+import { managerChoices, setManager, quoteBuildingSale, recallManager, repairBuilding, sackManager, sellBuilding, setPay, setTrading, shutdownBuilding } from '../sim/api';
 import { businessCarryingCost } from '../sim/businessState';
 import { goodsDeliverySummary } from '../sim/goodsDelivery';
 import { BUILDING_BY_ID } from '../sim/data/buildings';
@@ -10,8 +10,15 @@ import { protectionFee } from '../sim/premises';
 import { buildingMapIntel } from '../sim/mapIntel';
 import {fireDamageStage} from '../sim/buildingDamage';
 import { buildingName, money } from '../sim/world';
+import { hoursLabel, hoursOf, openNow } from '../sim/cityHours';
 import { thumbUrl } from './art';
 import { Icon, Kicker, Modal, Pill, Rivets, Stamp, Stars } from './common';
+
+/** A manager's ability as text stars for a dropdown: (business + organization) / 2, in half stars. */
+function starText(p: { skills: { business: number; organization: number } }): string {
+  const v = Math.round((p.skills.business + p.skills.organization)) / 2;
+  return '★'.repeat(Math.floor(v)) + (v % 1 ? '½' : '');
+}
 
 export function BuildingPanel() {
   const sim = useGame((s) => s.sim)!;
@@ -44,6 +51,10 @@ export function BuildingPanel() {
   const fireStage=fireDamageStage(b,w.week);
   const carryingCost=businessCarryingCost(b);
   const deliverySummary=mine?goodsDeliverySummary(w,b):null;
+  // Between weeks the manager is chosen right here, from the free hoods (playtest, 23 November).
+  const pickManager = mine && w.phase === 'planning' && b.cls !== 'empty' && b.state !== 'destroyed' && b.fbiClosedWeek == null;
+  const choices = pickManager ? managerChoices(w, gang.id)
+    .sort((a, c) => c.skills.business + c.skills.organization - (a.skills.business + a.skills.organization)) : [];
   const offerSale=()=>{
     const offer=quoteBuildingSale(w,gang.id,b.id);
     if(!offer.ok){notify(offer);return;}
@@ -103,6 +114,12 @@ export function BuildingPanel() {
               <b>{intel.ownerGangId != null ? w.gangs[intel.ownerGangId]?.name : owner!.name}</b>
             </div>
           )}
+          {b.state === 'trading' && b.cls !== 'municipal' && b.cls !== 'residential' && b.cls !== 'empty' && (
+            <div className="kv" title="Raids on a shut place meet nobody but find a thin till; protection from a shut shop is paid short at the owner's door.">
+              <span>Hours</span>
+              <b>{hoursLabel(hoursOf(b))}{hoursOf(b).close - hoursOf(b).open < 24 && <> · <span style={{ color: openNow(w, b) ? 'var(--green)' : 'var(--red)' }}>{openNow(w, b) ? 'open now' : 'shut now'}</span></>}</b>
+            </div>
+          )}
           {knowledge >= 3 && !mine && t && (
             <div className="kv">
               <span>Trade</span>
@@ -132,12 +149,29 @@ export function BuildingPanel() {
                 <span>Last week</span>
                 <b style={{ color: b.lastProfit >= 0 ? 'var(--green)' : 'var(--red)' }}>{money(b.lastProfit)}</b>
               </div>
+              {pickManager && (
+                <div className="kv manager-pick">
+                  <span>Manager</span>
+                  <select value={manager?.id ?? ''} title="Hand the business to a free hood: from the pool, or off a crew"
+                    onChange={(e) => { const pid = Number(e.target.value); if (e.target.value !== '') notify(act((s) => setManager(s.world, gang.id, b.id, pid))!); }}>
+                    {!manager && <option value="">Nobody: choose a hood</option>}
+                    {manager && <option value={manager.id}>{manager.name} {starText(manager)}</option>}
+                    {choices.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} {starText(p)}{p.teamId != null ? ` · ${w.teams[p.teamId]?.name ?? 'crew'}` : ' · pool'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               {manager && (
                 <>
-                  <div className="kv">
-                    <span>Manager</span>
-                    <b>{manager.name}</b>
-                  </div>
+                  {!pickManager && (
+                    <div className="kv">
+                      <span>Manager</span>
+                      <b>{manager.name}</b>
+                    </div>
+                  )}
                   <div className="kv">
                     <span>Ability</span>
                     <b>
@@ -169,7 +203,7 @@ export function BuildingPanel() {
               )}
               {!manager && b.cls !== 'empty' && b.fbiClosedWeek == null && (
                 <div className="note" style={{ color: 'var(--red)' }}>
-                  Nobody is running this place. Give a crew the Run Business order.
+                  Nobody is running this place. {pickManager ? 'Choose a hood above, or give' : 'Give'} a crew the Run Business order.
                 </div>
               )}
               {front && (

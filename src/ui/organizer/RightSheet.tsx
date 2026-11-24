@@ -32,6 +32,7 @@ import { selectableOrderPerson, selectableOrderSite, selectedOrderSites } from '
 import { resourceDragProps, useResourceDrop } from '../resourceDrag';
 
 import { inCustody } from '../../sim/prison';
+import { hoursLabel, hoursOf, openNow } from '../../sim/cityHours';
 import { buildingList } from '../../sim/entityLists';
 /** A length of crew time as the clock counts it (a twelve-hour day: constants.ts clockMinutes). */
 export function hours(simMinutes: number): string {
@@ -142,6 +143,11 @@ export function RightSheet() {
       kicker = 'Resource details · held by the law';
       body = <PrisonSheet />;
       break;
+    case 'businesses':
+      title = 'Businesses';
+      kicker = 'Resource details · the rackets and the fronts';
+      body = <BusinessesSheet />;
+      break;
     case 'weapons':
       title = 'Weapons';
       kicker = 'Resource details · black market';
@@ -196,6 +202,7 @@ const RESOURCE_TABS = [
   { id: 'map', label: 'City Map', icon: 'tabs/maps', key: '' },
   { id: 'hoods', label: 'Hoods', icon: 'groups/personnel', key: 'H' },
   { id: 'prison', label: 'Prison', icon: 'status/jailed', key: '' },
+  { id: 'businesses', label: 'Businesses', icon: 'groups/business', key: '' },
   { id: 'weapons', label: 'Weapons', icon: 'weapons/pistol', key: 'W' },
   { id: 'vehicles', label: 'Vehicles', icon: 'vehicles/coupe', key: 'V' },
   { id: 'recruits', label: 'Recruitment', icon: 'orders/recruit', key: '' },
@@ -220,7 +227,8 @@ export function ResourceWindow() {
     else setSheet({ kind: id });
   };
   const count = (id: ResourceTabId) => id === 'hoods' ? ` · ${gang.poolIds.filter((pid) => !inCustody(sim.world.people[pid])).length}` : id === 'recruits' ? ` · ${gang.recruitIds.length}`
-    : id === 'prison' ? (n => n ? ` · ${n}` : '')(prisoners(sim.world, gang).length) : '';
+    : id === 'prison' ? (n => n ? ` · ${n}` : '')(prisoners(sim.world, gang).length)
+    : id === 'businesses' ? (n => n ? ` · ${n}` : '')(gangBusinesses(sim.world, gang).length) : '';
   return (
     <div className="resource-window">
       <div className="resource-tabs" role="tablist" aria-label="Map and resources">
@@ -398,6 +406,69 @@ function PrisonSheet() {
             </div>
           );
         })
+      )}
+    </div>
+  );
+}
+
+/** The gang's own businesses: everything it owns that trades or makes goods. */
+function gangBusinesses(w: WorldState, gang: Gang): Building[] {
+  return buildingList(w).filter(b => b.ownerGangId === gang.id && !b.isHQ && b.cls !== 'empty' && b.cls !== 'residential' && b.state !== 'destroyed'
+    && b.typeId !== 'office');
+}
+
+const STATE_WORD: Record<Building['state'], string> = { trading: 'Trading', ceased: 'Closed down', damaged: 'Damaged', destroyed: 'Rubble', empty: 'Empty' };
+
+/**
+ * Every business the gang owns in one list (playtest, 21 November): what it
+ * took last week, its hours and whether it is open now, the manager, the
+ * front it hides behind, and the goods in stock. Clicking one shows it.
+ */
+function BusinessesSheet() {
+  const sim = useGame((s) => s.sim)!;
+  const selectBuilding = useGame((s) => s.selectBuilding);
+  const setSheet = useGame((s) => s.setSheet);
+  const w = sim.world, gang = sim.playerGang;
+  const list = gangBusinesses(w, gang).sort((a, b) =>
+    Number(b.cls === 'illegal') - Number(a.cls === 'illegal') || b.lastProfit - a.lastProfit || a.id - b.id);
+  const total = list.reduce((n, b) => n + b.lastProfit, 0);
+  return (
+    <div className="business-list">
+      <p className="tiny muted" style={{ marginTop: 0 }}>
+        Last week's takings, after what the managers kept back. Raids on a shut place meet nobody but find a thin till; protection from a shut shop is paid short.
+      </p>
+      {list.length === 0 ? (
+        <Empty>You own no businesses yet. Buy premises and set one up.</Empty>
+      ) : (
+        <>
+          <div className="kv"><span>{list.length} {list.length === 1 ? 'business' : 'businesses'}</span><b style={{ color: total >= 0 ? 'var(--green)' : 'var(--red)' }}>{money(total)} last week</b></div>
+          {list.map((b) => {
+            const manager = b.managerId != null ? w.people[b.managerId] : undefined;
+            const front = b.frontId != null ? w.buildings[b.frontId] : undefined;
+            const hrs = hoursOf(b), open = openNow(w, b), allHours = hrs.open === 0 && hrs.close === 24;
+            const goods = (['liquor', 'stolen', 'counterfeit'] as const).filter(k => b.stock[k] > 0);
+            return (
+              <div key={b.id} className="person-row business-row" role="button" tabIndex={0} title={`Inspect ${placeName(w, b)}`}
+                onClick={() => { setSheet(null); selectBuilding(b.id); }}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSheet(null); selectBuilding(b.id); } }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <span className="name">{placeName(w, b)}</span>
+                  <div className="tiny muted">
+                    {manager ? `Run by ${manager.name}` : 'No manager'}
+                    {front ? ` · behind ${placeName(w, front)}` : b.cls === 'illegal' ? ' · no front' : ''}
+                    {b.cls === 'illegal' && b.discovered ? ' · known to the FBI' : ''}
+                  </div>
+                  <div className="tiny muted">
+                    {b.state === 'trading' ? hoursLabel(hrs) : STATE_WORD[b.state]}
+                    {b.state === 'trading' && !allHours && <> · <span style={{ color: open ? 'var(--green)' : 'var(--red)' }}>{open ? 'open now' : 'shut now'}</span></>}
+                    {goods.map(k => <span key={k} title={k}> · <Icon name={`goods/${k}`} size={11} /> {b.stock[k]}</span>)}
+                  </div>
+                </div>
+                <b className="business-take" style={{ color: b.lastProfit >= 0 ? 'var(--green)' : 'var(--red)' }}>{money(b.lastProfit)}</b>
+              </div>
+            );
+          })}
+        </>
       )}
     </div>
   );

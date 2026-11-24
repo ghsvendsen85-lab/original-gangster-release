@@ -6,6 +6,7 @@ import { AttractMode } from './AttractMode';
 import { Blueprint } from './Blueprint';
 import { BuildingPanel } from './BuildingPanel';
 import { CityView } from './CityView';
+import { Debriefing } from './Debriefing';
 import { ConfirmDialog } from './common';
 import { HelpSheet } from './HelpSheet';
 import { Organizer } from './organizer/Organizer';
@@ -76,6 +77,7 @@ export function GameScreen() {
 
       {(savingToQuit || savingSnapshot) && !streetLoading && <div className="modal-back" role="status"><div className="paper sheet">Saving your city…</div></div>}
       {hint && !jobCard && !staff && !(ordering && planningView === 'plan' && pickMode?.kind === 'lieutenantArea') && <div className="paper hint-pill">{hint}</div>}
+      {planning && !streetLoading && <Debriefing />}
       {helpOpen && <HelpSheet onClose={() => setHelpOpen(false)} />}
       {quitPrompt && (
         <ConfirmDialog

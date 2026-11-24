@@ -7,6 +7,7 @@ import { peopleSlice } from '../peopleSlices';
 import type { Rng } from '../rng';
 import type { Block, Person, WorldState } from '../types';
 import { allBuildings, buildingDoor, dist } from '../world';
+import { atHomeAsleep, eveningCrowd, hourNow, NIGHT_VENUES, nightBeat, openAt, hoursOf } from '../cityHours';
 
 /**
  * Everyone who is not carrying out an order still has to be somewhere: citizens
@@ -70,6 +71,8 @@ function ambientPerson(w: WorldState, rng: Rng, p: Person, minutes: number, traf
     switch (p.role) {
       case 'citizen':
       case 'snitch': {
+        // After midnight most townsfolk are at home in bed (cityHours.ts).
+        if (atHomeAsleep(w, p)) break;
         if (!p.dest) {
           // The original's civilians are nearly always walking: on arrival a
           // wait of rand & 7 ticks, then the next errand (0x5D2740 idle branch,
@@ -106,8 +109,10 @@ function ambientPerson(w: WorldState, rng: Rng, p: Person, minutes: number, traf
       }
       case 'police': {
         if (!p.dest) {
-          // Officers off duty walk their beat rather than stand on the kerb.
-          if (rng.chance(Math.min(1, BEAT_RESTART * minutes))) wanderTo(w, rng, p, 2);
+          // Officers off duty walk their beat rather than stand on the kerb;
+          // the night beat is longer and kept moving (cityHours.ts).
+          const night = nightBeat(hourNow(w));
+          if (rng.chance(Math.min(1, BEAT_RESTART * (night ? 2 : 1) * minutes))) wanderTo(w, rng, p, night ? 3 : 2);
         } else {
           stepPerson(p, minutes, traffic);
         }
@@ -147,11 +152,21 @@ const CIVILIAN_RESTART = 3, BEAT_RESTART = 1;
 /** How strongly a block draws errands (0x606840 reads block+104). That byte is
  * the land value (0x537D70 copies it from the generator grid), so the original
  * city uses its own; elsewhere trading businesses stand in for it. */
-function tradingOn(w: WorldState, blk: Block): number {
-  if (blk.original) return blk.original.landValue;
+function tradingOn(w: WorldState, blk: Block, hour: number): number {
+  // In the evening the crowd goes where the night trade is open.
+  let night = 0;
+  if (eveningCrowd(hour)) for (const id of blk.lotIds) {
+    const b = w.buildings[w.lots[id].buildingId];
+    if (b?.state === 'trading' && NIGHT_VENUES.has(b.typeId) && openAt(hoursOf(b), hour)) night++;
+  }
+  if (blk.original) return blk.original.landValue + night * 40;
   let n = 0;
-  for (const id of blk.lotIds) if (w.buildings[w.lots[id].buildingId]?.state === 'trading') n++;
-  return n;
+  for (const id of blk.lotIds) {
+    const b = w.buildings[w.lots[id].buildingId];
+    // By day the shops draw them; a shop shut for the night does not.
+    if (b?.state === 'trading' && openAt(hoursOf(b), hour)) n++;
+  }
+  return n + night * 3;
 }
 
 function wanderTo(w: WorldState, rng: Rng, p: Person, radiusBlocks: number): void {
@@ -160,13 +175,14 @@ function wanderTo(w: WorldState, rng: Rng, p: Person, radiusBlocks: number): voi
   // Up to four tries for a block with a pavement (a failed pick used to cost a
   // whole extra wait); of the first two found, the busier one wins.
   let blk: Block | undefined, found = 0;
+  const hour = hourNow(w);
   for (let attempt = 0; attempt < 4 && found < 2; attempt++) {
     const nx = Math.max(0, Math.min(w.gridW - 1, gx + rng.int(-radiusBlocks, radiusBlocks)));
     const ny = Math.max(0, Math.min(w.gridH - 1, gy + rng.int(-radiusBlocks, radiusBlocks)));
     const candidate = cityBlockAt(w, nx, ny);
     if (!candidate || !hasFootway(candidate)) continue;
     found++;
-    if (!blk || tradingOn(w, candidate) > tradingOn(w, blk)) blk = candidate;
+    if (!blk || tradingOn(w, candidate, hour) > tradingOn(w, blk, hour)) blk = candidate;
   }
   if (!blk) return;
   if (w.cityLayout) { setDestination(w, p, blockPavement(blk, rng.int(0, 100000))); return; }

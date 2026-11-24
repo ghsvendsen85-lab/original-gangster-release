@@ -1,4 +1,5 @@
 import type { Person, WorldState } from './types';
+import { addMessage } from './events';
 import { reestimateTeamOrders } from './api';
 import { replaceLieutenant } from './execution';
 
@@ -61,4 +62,42 @@ export function sortPrisoners(w: WorldState): void {
     }
     gang.prisonIds = kept;
   }
+}
+
+/** What a stretch inside does to a man (playtest, 21 November). */
+export const PRISON_TOUGHENS = .5, PRISON_LOYALTY_COST = 15, PRISON_TALK_EVIDENCE = 8, PRISON_TALK_SUSPICION = 6;
+
+function hash01(n: number): number {
+  let x = Math.imul(n ^ 0x2c1b3c6d, 0x85ebca6b);
+  x ^= x >>> 13; x = Math.imul(x, 0xc2b2ae35); x ^= x >>> 16;
+  return (x >>> 0) / 4294967296;
+}
+
+/** The chance a man talked inside: the less loyal he went in, the likelier. */
+export function talkChance(loyalty: number): number {
+  return Math.max(0, Math.min(1, (100 - loyalty) / 150));
+}
+
+/**
+ * A gang man out after serving his sentence: harder (fists and intimidation
+ * half a star up), less loyal to the gang that let him rot, and perhaps he
+ * talked to get through it, which the police now hold against the boss. Fixed
+ * by the man and the week, so it draws nothing from the game's dice.
+ */
+export function backFromPrison(w: WorldState, p: Person): void {
+  if (p.gangId == null) return;
+  const gang = w.gangs[p.gangId];
+  if (!gang || gang.eliminated || p.role === 'boss') return;
+  const before = p.loyalty;
+  p.skills.fists = Math.min(5, p.skills.fists + PRISON_TOUGHENS);
+  p.skills.intimidation = Math.min(5, p.skills.intimidation + PRISON_TOUGHENS);
+  p.loyalty = Math.max(0, p.loyalty - PRISON_LOYALTY_COST);
+  const talked = hash01(p.id * 7919 + w.week) < talkChance(before);
+  if (talked) {
+    gang.evidence = Math.min(100, gang.evidence + PRISON_TALK_EVIDENCE);
+    gang.suspicion = Math.min(100, gang.suspicion + PRISON_TALK_SUSPICION);
+  }
+  if (gang.isPlayer) addMessage(w, 'police', talked
+    ? `${p.name} is out of prison, harder and less loyal, and word is he talked inside: the law knows more about you.`
+    : `${p.name} is out of prison, harder and less loyal. He kept his mouth shut.`, p.pos, p.id);
 }

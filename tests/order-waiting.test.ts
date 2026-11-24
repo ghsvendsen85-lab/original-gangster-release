@@ -93,6 +93,8 @@ describe('planned Wait and live Continue', () => {
     const second = allBuildings(s.w).find(b => b.id !== first.id && b.cls === 'commercial' && b.ownerGangId == null)!;
     second.protection = { ...first.protection! };
     for (const b of [first, second]) b.protection = { ...b.protection!, weekly: 80, refusing: false };
+    // Open all hours, so neither pays short at the door whatever the clock says (cityHours.ts).
+    for (const b of [first, second]) b.typeId = 'hotelSmall';
     s.order.type = 'collectProtection'; s.order.targetBuildingIds = [first.id, second.id];
     // Restart assignment from a planning snapshot with the final area selection.
     s.w.phase = 'planning'; s.sim.launchWeek();

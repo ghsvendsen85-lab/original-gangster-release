@@ -1,4 +1,5 @@
 import { visibilityNow } from './weather';
+import { atHomeAsleep, bedtimeShare, hourNow } from './cityHours';
 import { fearOf, hostilityOf, NO_ORIGINAL_CHANNEL, opinionSet } from './attitudes';
 import { INCIDENT_HOSTILITY, provoke } from './aiStance';
 import { cityBlockAt } from './cityLayout';
@@ -69,6 +70,7 @@ export function reportBusinessMove(w: WorldState, gangId: ID, b: Building, move:
 export function witnessesNear(w: WorldState, pos: Vec2, radius: number, exclude: ID[]): Person[] {
   const r2 = radius * radius;
   const out: Person[] = [];
+  const hour = hourNow(w), night = bedtimeShare(hour) > 0;
   for (const p of peopleList(w)) {
     if (p.status === 'dead' || p.status === 'jailed') continue;
     if (exclude.includes(p.id)) continue;
@@ -76,6 +78,8 @@ export function witnessesNear(w: WorldState, pos: Vec2, radius: number, exclude:
       continue;
     // A tram's riders are off the map's cell lists while they ride (0x712810).
     if (p.tram?.phase === 'riding') continue;
+    // At home in bed: nobody on the street to see (cityHours.ts).
+    if (night && atHomeAsleep(w, p, hour)) continue;
     if (dist2(p.pos, pos) <= r2) out.push(p);
   }
   return out;

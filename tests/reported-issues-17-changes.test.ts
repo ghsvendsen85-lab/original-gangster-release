@@ -93,7 +93,7 @@ describe('issue 17 items 30 and 31: backup crews, and what a refusal teaches', (
   };
 
   it('lets a second crew be sent to raid the same place, says so, and has it stand down once the job is done', () => {
-    const { sim, w, gang, team } = fixture(405); // a city where the first crew's raid comes off (its odds are about 82%)
+    const { sim, w, gang, team } = fixture(406); // a city where the first crew's raid comes off (its odds are about 82%)
     const door = buildingDoor(w, allBuildings(w).find(b => b.isHQ && b.ownerGangId === gang.id)!);
     const shop = allBuildings(w).filter(b => b.ownerGangId == null && b.cls === 'commercial' && b.state === 'trading')
       .sort((a, b) => dist(buildingDoor(w, a), door) - dist(buildingDoor(w, b), door))[0];

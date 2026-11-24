@@ -1,3 +1,4 @@
+import { hoursLabel, hoursOf, openNow } from './cityHours';
 import { INCIDENT_HOSTILITY, provoke } from './aiStance';
 import { originalWageQuote } from './originalWages';
 import { BLAST_DAMAGE, blastFear, effectiveHostility, fearOf, hostilityOf, MEMBER_DEATH_FEAR, NO_ORIGINAL_CHANNEL, opinionShift, ownerSquealLevel, setAttitude, shiftAttitude } from './attitudes';
@@ -6,7 +7,7 @@ import { originalHuntArrived, originalHuntFinds, startOriginalHunt } from './sys
 import {startBuildingEmergency} from './systems/buildingEmergency';
 import { validAmbushTarget } from './ambush';
 import { crewPeople, orderStaffing, readyForPlanning } from './orderStaffing';
-import { crewOrderSkill } from './orderSkills';
+import { crewOrderSkill, orderSkill } from './orderSkills';
 import { claimedTerritoryBlocks, distanceToTerritory } from './territory';
 import { observeTargetRace } from './targetRace';
 import { reclaimStaffVehicle } from './specialists';
@@ -167,10 +168,26 @@ function orderCrewSkill(actors: Person[], type: OrderType, loadout: Loadout): nu
   return crewOrderSkill(actors, ORDERS[type], p => loadout.has(p.id));
 }
 
+/** Business hours (cityHours.ts): protection taken from a shut shop at the
+ * owner's door is short; a raid on a shut place is easier but the till is
+ * thin, on an open one the till is full. */
+const SHUT_PROTECTION = .8, RAID_SHUT_EASE = .1, RAID_OPEN_HAUL = 1.2, RAID_SHUT_HAUL = .7;
+
 /** `successChance` for an order whose skills depend on who is armed. */
 function orderChance(actors: Person[], type: OrderType, loadout: Loadout, difficulty: number): number {
   const s = starFactor(orderCrewSkill(actors, type, loadout));
-  return Math.max(0.03, Math.min(0.97, 0.18 + s * 0.85 - difficulty * 0.75));
+  return Math.max(0.03, Math.min(0.97, 0.18 + s * 0.85 - difficulty * 0.75 + crewSizeBonus(actors.map(p => orderSkill(p, ORDERS[type], loadout.has(p.id))))));
+}
+
+/** Numbers tell (playtest, 23 November): every man on a job done by force
+ * besides the one leading it adds to the chance by his own skill at it, up to
+ * 5 points for a five-star man and next to nothing for a half-star one; 15 at
+ * most between them, so four five-star men are as good as it gets. The stars list holds each man's rating for the job. */
+export const CREW_SIZE_BONUS = .05, CREW_SIZE_BONUS_CAP = .15;
+export function crewSizeBonus(stars: number[]): number {
+  if (stars.length < 2) return 0;
+  const helpers = [...stars].sort((a, b) => b - a).slice(1);
+  return Math.min(CREW_SIZE_BONUS_CAP, helpers.reduce((n, s) => n + CREW_SIZE_BONUS * starFactor(s), 0));
 }
 
 /** Success roll shared by every order: one draw against `successChance`. */
@@ -1296,11 +1313,16 @@ function resolveTarget(
         miss(`${placeName(w, building)} has already paid this week.`);
         return;
       }
-      const take = building.protection.weekly;
+      // Business hours (cityHours.ts): over the counter while the place is
+      // open; shut, the crew knocks the owner up at home, and he pays short
+      // and remembers it.
+      const open = openNow(w, building);
+      const take = open ? building.protection.weekly : Math.round(building.protection.weekly * SHUT_PROTECTION);
       building.protection.collectedWeek = w.week;
       receiveOrderCash(w, gang, order, 'protection', take);
-      building.protection.grievance = Math.max(0, building.protection.grievance - 0.4);
-      say(`Collected $${take.toLocaleString('en-US')} from ${placeName(w, building)}.`);
+      building.protection.grievance = open ? Math.max(0, building.protection.grievance - 0.4) : building.protection.grievance + 0.15;
+      say(open ? `Collected $${take.toLocaleString('en-US')} from ${placeName(w, building)}.`
+        : `Collected $${take.toLocaleString('en-US')} at the owner's door: ${placeName(w, building)} was shut (${hoursLabel(hoursOf(building)).toLowerCase()}), so he paid short, and did not like it.`);
       break;
     }
 
@@ -1394,7 +1416,9 @@ function resolveTarget(
       if (building.hidesId != null) {
         const hidden = w.buildings[building.hidesId];
         if (hidden && hidden.ownerGangId !== gang.id) {
-          const found = roll(rng, actors, ['stealth', 'intelligence'], 0.35 + hidden.cover * 0.4);
+          // More eyes find more, each by his own stealth and wits (crewSizeBonus).
+          const found = rng.chance(Math.min(0.97, successChance(actors, ['stealth', 'intelligence'], 0.35 + hidden.cover * 0.4)
+            + crewSizeBonus(actors.map(p => skillAvg(p, ['stealth', 'intelligence'])))));
           if (found) {
             hidden.knowledge[gang.id] = 3;
             say(`Found a ${buildingName(w, hidden.id)} behind ${placeName(w, building)}.`);
@@ -1446,18 +1470,20 @@ function resolveTarget(
         );
         return;
       }
-      const persuaded = roll(rng, actors, ['intelligence'], 0.25);
-      if (!persuaded) {
-        miss(`Nobody at ${placeName(w, building)} was interested.`);
+      // Each man there is talked to in turn and makes up his own mind
+      // (playtest, 23 November); more recruiters with their wits about them
+      // talk more of them round (crewSizeBonus).
+      const chance = Math.min(0.97, successChance(actors, ['intelligence'], 0.25)
+        + crewSizeBonus(actors.map(p => skillAvg(p, ['intelligence']))));
+      const fresh = candidates.filter(c => !gang.recruitIds.includes(c.id));
+      if (!fresh.length) { say('Nobody new was willing to work for you.'); break; }
+      let added = 0;
+      for (const c of fresh) if (rng.chance(chance)) { gang.recruitIds.push(c.id); added++; }
+      if (!added) {
+        miss(`Nobody at ${placeName(w, building)} was interested (${fresh.length} asked).`);
         return;
       }
-      const take = rng.int(1, Math.min(3, candidates.length));
-      let added = 0;
-      for (let i = 0; i < take; i++) {
-        const c = candidates[i];
-        if (!gang.recruitIds.includes(c.id)) { gang.recruitIds.push(c.id); added++; }
-      }
-      say(added ? `${added} ${kind === 'hood' ? 'hood(s)' : kind + '(s)'} willing to work for you.` : 'Nobody new was willing to work for you.');
+      say(`${added} of ${fresh.length} ${kind === 'hood' ? 'hood(s)' : kind + '(s)'} at ${placeName(w, building)} willing to work for you.`);
       break;
     }
 
@@ -1540,7 +1566,8 @@ function resolveTarget(
       const distance = distanceToTerritory(w, gang.id, here);
       const difficulty =
         0.12 + Math.min(0.5, distance / 900) + Math.max(0, -(owner?.opinion[gang.id] ?? 0)) / 240;
-      const success = roll(rng, actors, ['intimidation'], difficulty);
+      // A show of force: more men in the shop, the likelier the owner pays.
+      const success = rng.chance(Math.min(0.97, successChance(actors, ['intimidation'], difficulty) + crewSizeBonus(actors.map(p => skillAvg(p, ['intimidation'])))));
       recordCrime(w, rng, {
         gangId: gang.id,
         perpetratorId: lead.id,
@@ -1588,7 +1615,10 @@ function resolveTarget(
       const t = typeOf(building);
       const blk = w.blocks[building.blockId];
       const guards = standingGuards(w, building);
-      const odds = orderChance(actors, 'raid', loadout, 0.28 + guards * 0.12);
+      // Business hours (cityHours.ts): shut, nobody is in to stop them, but
+      // the takings have gone to the bank; open, the till is full.
+      const open = openNow(w, building);
+      const odds = orderChance(actors, 'raid', loadout, 0.28 + guards * 0.12 + (open ? 0 : -RAID_SHUT_EASE));
       const success = rng.chance(odds);
       recordCrime(w, rng, {
         gangId: gang.id,
@@ -1598,9 +1628,9 @@ function resolveTarget(
         buildingId: building.id,
       });
       if (success) {
-        const haul = Math.round(((t?.profit ?? 200) * 1.6 + blk.landValue * 12) * rng.range(0.6, 1.5));
+        const haul = Math.round(((t?.profit ?? 200) * 1.6 + blk.landValue * 12) * rng.range(0.6, 1.5) * (open ? RAID_OPEN_HAUL : RAID_SHUT_HAUL));
         receiveOrderCash(w, gang, order, 'other', haul);
-        say(`Raided ${placeName(w, building)} for $${haul.toLocaleString('en-US')}.`);
+        say(`Raided ${placeName(w, building)} for $${haul.toLocaleString('en-US')}${open ? ' while it was open: the till was full.' : ' while it was shut: nobody in, but a thin till.'}`);
         // Done once the haul is taken; delivering the goods follows.
         order.completedTargets++;
         order.targetPaid = true;
