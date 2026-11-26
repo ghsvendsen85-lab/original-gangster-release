@@ -147,6 +147,10 @@ describe('industrial businesses with city services', () => {
     const order = Object.values(s.w.orders).find(o => o.gangId === s.g.id && o.type === 'buyPremises' && o.targetBuildingIds.includes(s.site.id));
     expect(order).toBeDefined();
     vi.restoreAllMocks();
+    // Keep the gangs at peace for the week: cars now stay in their garages, so a
+    // buyer far from his crew's cars walks, and a street war on the long way
+    // there would test the fighting, not the purchase.
+    for (const a of Object.values(s.w.gangs)) for (const b of Object.values(s.w.gangs)) if (a !== b) { a.offered[b.id] = 'peace'; a.known[b.id] = 'peace'; }
     s.w.phase = 'week'; beginWeekOrders(s.w);
     // Earlier jobs may send workers home before the purchase can start. Advance
     // the complete simulation so those off-order return journeys also finish.

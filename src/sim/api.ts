@@ -22,7 +22,8 @@ import { businessFrontReady, resetBusinessInvestigation } from './businessState'
 import { recoverExportGoods } from './exportGoods';
 import { centreLotNeedsFront, purchasablePremisesType } from './premises';
 import { donationAmount, donationTarget } from './charity';
-import { alight, dismount, releaseTransportOrder, removeFleetVehicle, sendHome } from './transport';
+import { alight, attachFleetVehicle, detachFleetVehicle, dismount, releaseTransportOrder, sendHome } from './transport';
+import { rekeyVehicle, syncFleet } from './garages';
 import { availableSpecialist, reclaimStaffVehicle } from './specialists';
 import { cancelSpecialistVisits, queueSpecialistJob } from './specialistJobs';
 export { bribePrice } from './officials';
@@ -52,6 +53,7 @@ import { defect } from './systems/economy';
 import { campaignWeeklyCost, officeEntryCheck, enterElection, withdrawFromElection } from './systems/politics';
 import type { Rng } from './rng';
 import type {
+  FleetVehicle,
   Building,
   DiplomacyLevel,
   Gang,
@@ -819,6 +821,8 @@ export function buyVehicle(w: WorldState, gangId: ID, vehicle: VehicleId, teamId
   } else {
     gang.vehicles[vehicle] = (gang.vehicles[vehicle] ?? 0) + 1;
   }
+  // Delivered to the garage nearest the HQ (or the kerb outside when every garage is full).
+  syncFleet(w);
   return ok(`Bought a ${VEHICLES[vehicle].name}.`);
 }
 
@@ -829,7 +833,9 @@ export function sellVehicle(w: WorldState, gangId: ID, vehicle: VehicleId, teamI
   if (!VEHICLES[vehicle]) return fail('No such vehicle.');
   const store = teamId != null && w.teams[teamId] ? w.teams[teamId].vehicles : gang.vehicles;
   if ((store[vehicle] ?? 0) <= 0) return fail('You have none to sell.');
-  if(!removeFleetVehicle(w,teamId!=null?w.teams[teamId]:gang,vehicle))return fail('That vehicle is out with a crew or carrying goods. Bring it back first.');
+  // Only a car standing in one of the gang's garages can be sold (playtest, 26 November).
+  if (detachFleetVehicle(w, teamId != null ? w.teams[teamId] : gang, vehicle, inGarageToSell) === false)
+    return fail(`None of those is in a garage. Only a car in a garage can be sold; bring one home first.`);
   store[vehicle]--;
   if (teamId != null) reestimateTeamOrders(w, w.teams[teamId]);
   receiveAssetCash(w, gang, Math.round(VEHICLES[vehicle].cost * 0.5), VEHICLES[vehicle].cost);
@@ -847,17 +853,25 @@ export function transferVehicle(
   const team = w.teams[teamId];
   if (!gang || !team || team.gangId !== gangId) return fail('No such crew.');
   if (!VEHICLES[vehicle]) return fail('No such vehicle.');
+  // The same car changes hands where it stands (in its garage, or at the kerb).
   if (toTeam) {
-    if ((gang.vehicles[vehicle] ?? 0) <= 0) return fail('None in the cache.');
-    if(!removeFleetVehicle(w,gang,vehicle))return fail('That vehicle is still carrying goods. Bring it back first.');
+    if ((gang.vehicles[vehicle] ?? 0) <= 0) return fail('No unassigned ones.');
+    const car = detachFleetVehicle(w, gang, vehicle);
+    if (car === false) return fail('That vehicle is still carrying goods. Bring it back first.');
     gang.vehicles[vehicle]--;
-    team.vehicles[vehicle] = (team.vehicles[vehicle] ?? 0) + 1;
+    const slot = team.vehicles[vehicle] ?? 0;
+    attachFleetVehicle(w, car, `team:${team.id}:${vehicle}:${slot}`, { teamId: team.id, staffId: null, slot });
+    team.vehicles[vehicle] = slot + 1;
   } else {
     if ((team.vehicles[vehicle] ?? 0) <= 0) return fail('The crew has none.');
-    if(!removeFleetVehicle(w,team,vehicle))return fail('That vehicle is out with a crew. Bring it back first.');
+    const car = detachFleetVehicle(w, team, vehicle);
+    if (car === false) return fail('That vehicle is out with a crew. Bring it back first.');
     team.vehicles[vehicle]--;
-    gang.vehicles[vehicle] = (gang.vehicles[vehicle] ?? 0) + 1;
+    const slot = gang.vehicles[vehicle] ?? 0;
+    attachFleetVehicle(w, car, `cache:${gang.id}:${vehicle}:${slot}`, { teamId: null, staffId: null, slot });
+    gang.vehicles[vehicle] = slot + 1;
   }
+  syncFleet(w);
   // The journeys of the orders already accepted are quicker (or slower) for it.
   reestimateTeamOrders(w, team);
   return ok();
@@ -1030,6 +1044,88 @@ export function employPoliceOfficer(w: WorldState, gangId: ID, personId: ID): Ap
   return queueSpecialistJob(w, gangId, 'employPolice', personId);
 }
 
+/** A car may be sold only from a garage; one never yet brought into the world has nowhere else to be. */
+const inGarageToSell = (v: FleetVehicle | undefined) => !v || v.garageId != null;
+
+/** Take a car off whatever books it is on (crew, cache or specialist), keeping the
+ * keys there dense: the last car of the kind takes its slot. Returns the crew it left. */
+function unbookVehicle(w: WorldState, gang: Gang, key: string): Team | undefined {
+  const car = w.vehicleFleet![key], kind = car.kind;
+  const oldTeam = car.teamId == null ? undefined : w.teams[car.teamId];
+  delete w.vehicleFleet![key];
+  if (car.staffId != null) {
+    const r = w.people[car.staffId]?.role;
+    if (gang.staffVehicles && (r === 'accountant' || r === 'lawyer')) gang.staffVehicles[r] = null;
+  } else {
+    const books = oldTeam ?? gang, prefix = oldTeam ? `team:${oldTeam.id}` : `cache:${gang.id}`;
+    const last = (books.vehicles[kind] ?? 1) - 1, lastKey = `${prefix}:${kind}:${last}`;
+    if (lastKey !== key) rekeyVehicle(w, lastKey, key, { teamId: oldTeam?.id ?? null, staffId: null, slot: car.slot });
+    books.vehicles[kind] = last;
+  }
+  return oldTeam;
+}
+
+/** Sell one particular car from the vehicle list. It has to be in a garage. */
+export function sellFleetVehicle(w: WorldState, gangId: ID, key: string): ApiResult {
+  const gang = w.gangs[gangId];
+  const car = w.vehicleFleet?.[key];
+  if (!gang) return fail('No such gang.');
+  if (!car || car.gangId !== gangId) return fail('No such vehicle.');
+  if (car.cargo || car.orderId != null || car.occupantIds.length) return fail('That vehicle is out with a crew or carrying goods. Bring it back first.');
+  if (car.garageId == null) return fail('Only a car in a garage can be sold. Bring it home first.');
+  const name = `${VEHICLES[car.kind].name} ${car.no ?? car.slot + 1}`;
+  const oldTeam = unbookVehicle(w, gang, key);
+  syncFleet(w);
+  if (oldTeam) reestimateTeamOrders(w, oldTeam);
+  receiveAssetCash(w, gang, Math.round(VEHICLES[car.kind].cost * 0.5), VEHICLES[car.kind].cost);
+  return ok(`Sold ${name}.`);
+}
+
+/** Who a car can be given to from the vehicle list: a crew, the cache, or a specialist. */
+export type VehicleHolder = { teamId: ID } | 'cache' | 'accountant' | 'lawyer';
+
+/**
+ * Hand one particular car to a crew, the cache, the accountant or the lawyer
+ * (playtest, 26 November): the same car, where it stands. A car out on a job,
+ * carrying goods or with anyone aboard has to come back first.
+ */
+export function assignVehicle(w: WorldState, gangId: ID, key: string, to: VehicleHolder): ApiResult {
+  const gang = w.gangs[gangId];
+  const car = w.vehicleFleet?.[key];
+  if (!gang) return fail('No such gang.');
+  if (!car || car.gangId !== gangId) return fail('No such vehicle.');
+  const team = typeof to === 'object' ? w.teams[to.teamId] : undefined;
+  if (typeof to === 'object' && (!team || team.gangId !== gangId)) return fail('No such crew.');
+  const role = to === 'accountant' || to === 'lawyer' ? to : null;
+  const staffPerson = role ? availableSpecialist(w, gang, role) : undefined;
+  if (role && !staffPerson) return fail(`You have no ${role} to give it to.`);
+  const holderNow = car.teamId != null ? car.teamId : car.staffId != null ? (w.people[car.staffId]?.role ?? null) : 'cache';
+  const holderNext = team ? team.id : role ?? 'cache';
+  if (holderNow === holderNext) return ok();
+  if (car.cargo || car.orderId != null || car.occupantIds.length) return fail('That vehicle is out with a crew or carrying goods. Bring it back first.');
+  if (role && staffPerson!.vehicleKey && w.vehicleFleet?.[staffPerson!.vehicleKey]?.occupantIds.length)
+    return fail(`Bring your ${role} back before changing the car.`);
+  const kind = car.kind;
+  const oldTeam = unbookVehicle(w, gang, key);
+  // Onto the new ones.
+  if (role) {
+    reclaimStaffVehicle(w, gang, role);
+    gang.staffVehicles ??= { accountant: null, lawyer: null };
+    gang.staffVehicles[role] = kind;
+    attachFleetVehicle(w, car, `staff:${staffPerson!.id}`, { teamId: null, staffId: staffPerson!.id, slot: 0 });
+  } else {
+    const books = team ?? gang, slot = books.vehicles[kind] ?? 0;
+    attachFleetVehicle(w, car, team ? `team:${team.id}:${kind}:${slot}` : `cache:${gang.id}:${kind}:${slot}`,
+      { teamId: team?.id ?? null, staffId: null, slot });
+    books.vehicles[kind] = slot + 1;
+  }
+  syncFleet(w);
+  if (oldTeam) reestimateTeamOrders(w, oldTeam);
+  if (team) reestimateTeamOrders(w, team);
+  const name = `${VEHICLES[kind].name} ${car.no ?? car.slot + 1}`;
+  return ok(team ? `${name} now belongs to ${team.name}.` : role ? `The ${role} has the keys to ${name}.` : `${name} is now unassigned.`);
+}
+
 /** Give the accountant or the lawyer a car from the cache, or take it back. */
 export function assignStaffVehicle(w: WorldState, gangId: ID, who: 'accountant' | 'lawyer', vehicle: VehicleId | null): ApiResult {
   const gang = w.gangs[gangId];
@@ -1040,17 +1136,21 @@ export function assignStaffVehicle(w: WorldState, gangId: ID, who: 'accountant' 
   const had = gang.staffVehicles?.[who] ?? null;
   // Validate the replacement before returning the currently allocated keys.
   if (vehicle && (!Object.hasOwn(VEHICLES, vehicle) ||
-    (vehicle !== had && (gang.vehicles[vehicle] ?? 0) <= 0))) return fail('None of those in the cache.');
+    (vehicle !== had && (gang.vehicles[vehicle] ?? 0) <= 0))) return fail('No unassigned ones of those.');
   if (vehicle && !availableSpecialist(w, gang, who)) return fail(`Your ${who} is not available.`);
   if (vehicle === had) return ok();
   if(person.vehicleKey&&w.vehicleFleet?.[person.vehicleKey]?.occupantIds.length)return fail(`Bring your ${who} back before changing the car.`);
-  if(vehicle&&!removeFleetVehicle(w,gang,vehicle))return fail('That vehicle is still out with goods.');
+  const car = vehicle ? detachFleetVehicle(w, gang, vehicle) : null;
+  if (car === false) return fail('That vehicle is still out with goods.');
+  if (vehicle) gang.vehicles[vehicle]--;
   reclaimStaffVehicle(w, gang, who);
   gang.staffVehicles ??= { accountant: null, lawyer: null };
   if (vehicle != null) {
-    gang.vehicles[vehicle]--;
+    // The same car, where it stands, now kept for the specialist.
+    attachFleetVehicle(w, car, `staff:${person.id}`, { teamId: null, staffId: person.id, slot: 0 });
     gang.staffVehicles[who] = vehicle;
   }
+  syncFleet(w);
   person.inVehicle = false;
   return ok(vehicle ? `The ${who} has the keys to a ${VEHICLES[vehicle].name.toLowerCase()}.` : `The ${who} is back on foot.`);
 }

@@ -1,6 +1,7 @@
 import { DRIVE_MIN_DISTANCE, DRIVE_SPEED, MINUTES_PER_WEEK, ORDERS, VEHICLES, WALK_SPEED } from './constants';
 import { hash32 } from './hash';
 import { cargoWarehouse, routeCargoReturn, unloadCargo } from './cargo';
+import { garageIfNear, garageKerb, garageWithRoom, gangGarages, ownerKeyPrefix, putInGarage, syncFleet, takeOutOfGarage } from './garages';
 import { clearDestination, setDestination } from './movement';
 import { onRoad, parkingSpot, pavementBeside } from './vehicleNavigation';
 import { allBuildings, buildingDoor, dist } from './world';
@@ -85,7 +86,7 @@ export function restingStatus(w: WorldState, p: Person): string {
 export function parkedSpots(w: WorldState, exceptKey: string): Vec2[] {
   const out: Vec2[] = [];
   for (const [key, v] of Object.entries(w.vehicleFleet ?? {})) {
-    if (key === exceptKey) continue;
+    if (key === exceptKey || v.garageId != null) continue;
     const driver = v.driverId == null ? undefined : w.people[v.driverId];
     out.push(driver?.inVehicle && driver.dest ? driver.dest : v.pos);
   }
@@ -120,6 +121,8 @@ export function tryBoard(w: WorldState, v: FleetVehicle): void {
   syncVehicle(w,v);
 }
 function reserve(w:WorldState,key:string,v:FleetVehicle,people:Person[],to:Vec2,orderId:ID|null):void {
+  // Out of the garage to the kerb, where the crew walk over to it.
+  if(v.garageId!=null)takeOutOfGarage(w,key,v);
   v.occupantIds=people.map(p=>p.id);v.driverId=people.reduce((a,b)=>a.skills.driving>=b.skills.driving?a:b).id;
   v.orderId=orderId;v.destination={...to};v.boarding=true;v.returning=false;
   for(const p of people){p.vehicleKey=key;p.inVehicle=false;setDestination(w,p,v.pos);}
@@ -128,7 +131,7 @@ function reserve(w:WorldState,key:string,v:FleetVehicle,people:Person[],to:Vec2,
   tryBoard(w,v);
 }
 /** The estimator and dispatch use the same free cars, riders and drivers. */
-export function transportPlan(w:WorldState,team:Team,people:Person[],type:OrderType) {
+export function transportPlan(w:WorldState,team:Team,people:Person[],type:OrderType,to?:Vec2) {
   const remaining=[...people];
   const cars:{key:string;kind:VehicleId;slot:number;riders:Person[]}[]=[];
   const preference=type==='export'||type==='raid'?['truck','coupe','speedster','motorcycle'] as VehicleId[]:kinds;
@@ -137,20 +140,63 @@ export function transportPlan(w:WorldState,team:Team,people:Person[],type:OrderT
     for(let slot=0;slot<(team.vehicles[kind]??0)&&remaining.length;slot++){
       const key=`team:${team.id}:${kind}:${slot}`;
       if(busy(w.vehicleFleet?.[key]))continue;
-      // Left out across town: it is fetched home rather than walked to.
-      const parked=w.vehicleFleet?.[key];if(parked&&remaining[0]&&dist(parked.pos,remaining[0].pos)>DRIVE_MIN_DISTANCE)continue;
+      // Left out across town: it is fetched home rather than walked to, unless walking
+      // over to it (in its garage, say) and driving on is still quicker than walking there.
+      const parked=w.vehicleFleet?.[key];if(parked&&remaining[0]&&dist(parked.pos,remaining[0].pos)>DRIVE_MIN_DISTANCE&&!(to&&worthFetching(remaining[0],parked,to)))continue;
       const seats=type==='export'&&kind==='truck'?Math.min(VEHICLES.truck.capacity,Math.ceil(remaining.length/Math.max(1,free))):VEHICLES[kind].capacity;
       cars.push({key,kind,slot,riders:remaining.splice(0,seats)});free--;
     }
   }
   return {cars,walkers:remaining};
 }
+/** Walking to the car and driving on beats walking straight there. */
+function worthFetching(p:Person,car:FleetVehicle,to:Vec2):boolean{
+  const drive=DRIVE_SPEED*VEHICLES[car.kind].speed*(.75+p.skills.driving*.1);
+  return dist(p.pos,car.pos)/WALK_SPEED+dist(car.pos,to)/drive<dist(p.pos,to)/WALK_SPEED;
+}
+/**
+ * A crew far from its own cars takes a free car of the same kind that nobody
+ * holds (the gang cache) and that stands nearer, in another office's or
+ * warehouse's garage, say; its own far car becomes unassigned in its place
+ * (playtest, 26 November). Only as many cars as the men need change hands, and
+ * nothing moves on the street.
+ */
+function swapForNearerCacheCars(w:WorldState,team:Team,people:Person[],to:Vec2,orderId:ID):void{
+  const gang=w.gangs[team.gangId],fleet=w.vehicleFleet,p=people[0];
+  if(!gang||!fleet||!p)return;
+  const reach=(v:FleetVehicle)=>dist(v.pos,p.pos)<=DRIVE_MIN_DISTANCE||worthFetching(p,v,to);
+  const teamKey=(kind:VehicleId,i:number)=>`team:${team.id}:${kind}:${i}`;
+  let seats=0;
+  for(const kind of kinds)for(let i=0;i<(team.vehicles[kind]??0);i++){
+    const v=fleet[teamKey(kind,i)];
+    if(v&&!busy(v)&&reach(v))seats+=VEHICLES[kind].capacity;
+  }
+  for(const kind of kinds)for(let i=0;i<(team.vehicles[kind]??0)&&seats<people.length;i++){
+    const key=teamKey(kind,i),own=fleet[key];
+    if(!own||busy(own)||reach(own))continue;
+    let best:string|undefined,bestDist=Infinity;
+    for(let j=0;j<(gang.vehicles[kind]??0);j++){
+      const cacheKey=`cache:${gang.id}:${kind}:${j}`,v=fleet[cacheKey];
+      if(!v||busy(v)||!reach(v))continue;
+      const d=dist(v.pos,p.pos);
+      if(d<bestDist){bestDist=d;best=cacheKey;}
+    }
+    if(!best)continue;
+    const near=fleet[best],cacheSlot=near.slot;
+    fleet[key]=near;near.teamId=team.id;near.slot=i;
+    fleet[best]=own;own.teamId=null;own.slot=cacheSlot;
+    seats+=VEHICLES[kind].capacity;
+    const label=(v:FleetVehicle)=>`${VEHICLES[v.kind].name} ${v.no??v.slot+1}`;
+    w.orders[orderId]?.results.push(`Took ${label(near)}, standing nearer, instead of the crew's own ${label(own)}, which is now unassigned.`);
+  }
+}
 /** Each car is reserved once, including parked cars retained by an active job. */
 export function allocateTransport(w:WorldState,team:Team,people:Person[],to:Vec2,orderId:ID,type:OrderType):void {
   reconcileTransport(w);
   // Only men going far enough to drive take a car (exports and raids carry goods, so always do).
   const drivers=type==='export'||type==='raid'?people:people.filter(p=>dist(p.pos,to)>DRIVE_MIN_DISTANCE);
-  const plan=transportPlan(w,team,drivers,type);
+  if(drivers.length)swapForNearerCacheCars(w,team,drivers,to,orderId);
+  const plan=transportPlan(w,team,drivers,type,to);
   for(const {key,kind,slot,riders} of plan.cars)reserve(w,key,makeVehicle(w,key,kind,team.gangId,team.id,null,slot,to),riders,to,orderId);
   for(const p of [...plan.walkers,...people.filter(p=>!drivers.includes(p))]){p.inVehicle=false;delete p.vehicleKey;setDestination(w,p,to);}
 }
@@ -222,7 +268,7 @@ export function sendHome(w:WorldState,p:Person):void {
   if(v&&!p.inVehicle&&v.boarding)tryBoard(w,v);
   if(v?.cargo?.purpose==='return'){routeCargoReturn(w,v);return;}
   // Home to a parking spot of its own by the office (not the one point every car stopped on).
-  if(v&&p.inVehicle){v.returning=true;setDestination(w,vehicleDriver(w,p),parkingSpot(w,destination,parkedSpots(w,p.vehicleKey!)));}
+  if(v&&p.inVehicle){v.returning=true;setDestination(w,vehicleDriver(w,p),homeSpot(w,p.gangId,destination,p.vehicleKey!));}
   else if(p.role==='lawyer'||p.role==='accountant'){
     startStaffJourney(w,p,destination);const car=vehicleOf(w,p);if(car)car.returning=true;
   }else {if(v)dismount(w,p);setDestination(w,p,destination);}
@@ -243,10 +289,16 @@ export function afterTransportStep(w:WorldState,p:Person,arrived:boolean):boolea
       return false;
     }
     if(arrived&&v.returning){
-      for(const id of [...v.occupantIds]){
-        const rider=w.people[id];dismount(w,rider);
-        // Home: out of the car and in at the office door, not left standing in the lane beside it.
-        if(rider?.gangId!=null&&rider.status==='active'&&ownOffice(w,rider.gangId))rider.pos={...base(w,rider.gangId,rider.pos)};
+      const riders=v.occupantIds.map(id=>w.people[id]).filter(Boolean);
+      for(const rider of riders)dismount(w,rider);
+      // Into the garage it stopped at, when there is a bay free; otherwise it stays at the kerb.
+      garageIfNear(w,v);
+      for(const rider of riders){
+        if(rider.gangId==null||rider.status!=='active'||!ownOffice(w,rider.gangId))continue;
+        // Home: out of the car and in at the office door, not left standing in the lane beside it;
+        // from a warehouse garage he walks back to the office.
+        const office=base(w,rider.gangId,rider.pos);
+        if(dist(office,rider.pos)<=STRANDED_DISTANCE)rider.pos={...office};else setDestination(w,rider,office);
       }
     }
   }
@@ -254,6 +306,7 @@ export function afterTransportStep(w:WorldState,p:Person,arrived:boolean):boolea
 }
 /** Clean interrupted seats, promote a surviving passenger, release ended jobs. */
 export function reconcileTransport(w:WorldState):void {
+  syncFleet(w);
   for(const [key,v] of Object.entries(w.vehicleFleet??{})){
     if(v.unloading&&absoluteMinute(w)>=v.unloading.until){
       delete v.unloading;const driver=v.driverId==null?undefined:w.people[v.driverId];if(driver)sendHome(w,driver);
@@ -285,7 +338,7 @@ export function reconcileTransport(w:WorldState):void {
       if(w.phase==='week'){
         const now=absoluteMinute(w);v.idleSince??=now;
         const courier=now-v.idleSince>=STRANDED_MINUTES?freeCourier(w,v):undefined;
-        if(courier){delete v.idleSince;reserve(w,key,v,[courier],parkingSpot(w,base(w,v.gangId,v.pos),parkedSpots(w,key)),null);v.returning=true;}
+        if(courier){delete v.idleSince;reserve(w,key,v,[courier],homeSpot(w,v.gangId,base(w,v.gangId,v.pos),key),null);v.returning=true;}
       }
     }
     else delete v.idleSince;
@@ -303,7 +356,16 @@ function freeCourier(w:WorldState,v:FleetVehicle):Person|undefined{
 const STRANDED_DISTANCE=25;
 /** How long a car left out stands before somebody fetches it, in minutes. */
 const STRANDED_MINUTES=60;
-function stranded(w:WorldState,v:FleetVehicle):boolean{return dist(v.pos,base(w,v.gangId,v.pos))>STRANDED_DISTANCE;}
+function stranded(w:WorldState,v:FleetVehicle):boolean{
+  if(v.garageId!=null)return false;
+  const near=(p:Vec2)=>dist(v.pos,p)<=STRANDED_DISTANCE;
+  return !near(base(w,v.gangId,v.pos))&&!gangGarages(w,v.gangId).some(b=>near(buildingDoor(w,b)));
+}
+/** Where a car going home stops: by the garage with a free bay nearest the office, or the kerb outside the office. */
+function homeSpot(w:WorldState,gangId:ID,office:Vec2,key:string):Vec2{
+  const garage=garageWithRoom(w,gangId,office);
+  return garage?garageKerb(w,garage,key):parkingSpot(w,office,parkedSpots(w,key));
+}
 export function orderVehicles(w:WorldState,people:Person[]):FleetVehicle[]{
   const keys=new Set(people.filter(p=>p.inVehicle).map(p=>p.vehicleKey).filter((k):k is string=>!!k));
   return [...keys].map(k=>w.vehicleFleet?.[k]).filter((v):v is FleetVehicle=>!!v);
@@ -313,17 +375,29 @@ export function cargoCapacity(w:WorldState,people:Person[]):number {
 }
 /** Can only dispose of a car which has actually returned and is unreserved. */
 export function removeFleetVehicle(w:WorldState,owner:Team|Gang,kind:VehicleId):boolean {
-  const count=owner.vehicles[kind]??0,prefix='lieutenantId' in owner?`team:${owner.id}`:`cache:${owner.id}`;
+  return detachFleetVehicle(w,owner,kind)!==false;
+}
+/** Take one free car of this kind off an owner's books, keeping the others' keys
+ * dense. Returns the car itself (null when it never came into the world), or
+ * false when every one is out on a job or carrying goods. */
+export function detachFleetVehicle(w:WorldState,owner:Team|Gang,kind:VehicleId,allowed?:(v:FleetVehicle|undefined)=>boolean):FleetVehicle|null|false {
+  const count=owner.vehicles[kind]??0,prefix=ownerKeyPrefix(owner);
   for(let slot=count-1;slot>=0;slot--){
     const key=`${prefix}:${kind}:${slot}`,v=w.vehicleFleet?.[key];
-    if(busy(v))continue;
+    if(busy(v)||allowed&&!allowed(v))continue;
     const lastKey=`${prefix}:${kind}:${count-1}`,last=w.vehicleFleet?.[lastKey];
     if(w.vehicleFleet){delete w.vehicleFleet[key];delete w.vehicleFleet[lastKey];
       if(last&&last!==v){last.slot=slot;w.vehicleFleet[key]=last;for(const id of last.occupantIds)w.people[id].vehicleKey=key;
         for(const o of Object.values(w.orders))if(o.exportDelivery?.vehicleKeys)o.exportDelivery.vehicleKeys=o.exportDelivery.vehicleKeys.map(k=>k===lastKey?key:k);}}
-    return true;
+    return v??null;
   }
   return false;
+}
+/** Hand a car (taken off its old books by detachFleetVehicle) to a new owner, where it stands. */
+export function attachFleetVehicle(w:WorldState,v:FleetVehicle|null,key:string,owner:{teamId:ID|null;staffId:ID|null;slot:number}):void{
+  if(!v)return;
+  v.teamId=owner.teamId;v.staffId=owner.staffId;v.slot=owner.slot;
+  (w.vehicleFleet??={})[key]=v;
 }
 /** Empty cars at the offices are back in the garage after the weekend; one left out
  * on the streets, and undelivered loads, keep their place. */
@@ -334,20 +408,28 @@ export function resetWeekTransport(w:WorldState):void {
     // Left out on the streets: it is still there next week (fetched, or taken from where it stands).
     // One whose crew was still aboard when the week ran out comes home with them: they start the next
     // week at the office, and a car left across town was passed over, so a repeated order went on foot.
-    else if(v.teamId!=null&&stranded(w,v)&&!v.occupantIds.length){
+    // Cars are never taken out of the world: the rest go home to a garage (cars
+    // in use come home with their crews), or stay at the kerb when it is full.
+    else {
+      const aboard=v.occupantIds.length>0;
       v.occupantIds=[];v.driverId=null;v.orderId=null;v.destination=null;v.boarding=false;v.returning=false;
       delete v.boardAfter;delete v.unloading;
+      if(v.garageId!=null||(!aboard&&stranded(w,v)))continue;
+      const office=base(w,v.gangId,v.pos),garage=garageWithRoom(w,v.gangId,aboard?office:v.pos);
+      if(garage&&(aboard||dist(buildingDoor(w,garage),v.pos)<=STRANDED_DISTANCE))putInGarage(w,v,garage);
+      else if(aboard)v.pos=parkingSpot(w,office,parkedSpots(w,key));
     }
-    else delete w.vehicleFleet![key];
   }
+  syncFleet(w);
   if(!Object.keys(w.vehicleFleet??{}).length)delete w.vehicleFleet;
 }
 /** Old saves had a boolean car per hood. Preserve legal positions/routes while
  * limiting those cars to the owned fleet; nearby same-job riders share a seat. */
 export function restoreLegacyTransport(w:WorldState):void {
-  if(w.vehicleFleet||w.phase!=='week')return;
+  if(w.phase!=='week')return;
   for(const p of Object.values(w.people)){
-    if(!p.inVehicle||p.status!=='active')continue;
+    // Already seated in a car of the fleet (every save since the fleet began).
+    if(!p.inVehicle||p.status!=='active'||p.vehicleKey&&w.vehicleFleet?.[p.vehicleKey])continue;
     const team=p.teamId==null?undefined:w.teams[p.teamId];
     const staff=p.role==='accountant'||p.role==='lawyer'?w.gangs[p.gangId!]?.staffVehicles?.[p.role]:null;
     if(!team&&!staff)continue; // police and standalone review figures are not team inventory
@@ -356,7 +438,7 @@ export function restoreLegacyTransport(w:WorldState):void {
     let key:string|undefined,kind:VehicleId|undefined,slot=0;
     if(staff){key=`staff:${p.id}`;kind=staff;}
     else for(const k of (p.orderId!=null&&['export','raid'].includes(w.orders[p.orderId]?.type)?['truck','coupe','speedster','motorcycle']:['coupe','truck','speedster','motorcycle']) as VehicleId[]){
-      for(let i=0;i<(team!.vehicles[k]??0);i++)if(!w.vehicleFleet?.[`team:${team!.id}:${k}:${i}`]){key=`team:${team!.id}:${k}:${i}`;kind=k;slot=i;break;}
+      for(let i=0;i<(team!.vehicles[k]??0);i++)if(!busy(w.vehicleFleet?.[`team:${team!.id}:${k}:${i}`])){key=`team:${team!.id}:${k}:${i}`;kind=k;slot=i;break;}
       if(key)break;
     }
     if(!key||!kind){const dest=p.dest;dismount(w,p);if(dest)setDestination(w,p,dest);continue;}

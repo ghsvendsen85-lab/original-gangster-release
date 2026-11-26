@@ -2112,14 +2112,13 @@ export function disbandTeam(w: WorldState, gang: Gang, teamId: ID, keepLieutenan
   if (!team || team.gangId !== gang.id) return;
   for(const id of team.orderIds){const o=w.orders[id];if(o)recoverExportGoods(w,o,!orderActors(w,o).length);}
   for(const [key,v] of Object.entries(w.vehicleFleet??{}))if(v.teamId===teamId){
-    // Loaded vehicles keep their position and crew until the delivery finishes,
-    // even when the lieutenant's inventory returns to the gang cache.
-    if(v.cargo){
-      v.cargo.purpose='return';v.cargo.orderId=null;v.orderId=null;
-      v.slot+=(gang.vehicles[v.kind]??0);v.teamId=null;
-      const newKey=`cache:${gang.id}:${v.kind}:${v.slot}`;
-      w.vehicleFleet![newKey]=v;for(const id of v.occupantIds)w.people[id].vehicleKey=newKey;
-    }else for(const id of [...v.occupantIds]){const p=w.people[id];if(p)dismount(w,p);}
+    // Every car goes back to the gang cache where it stands. Loaded vehicles keep
+    // their crew until the delivery finishes; the others are left by their riders.
+    if(v.cargo){v.cargo.purpose='return';v.cargo.orderId=null;v.orderId=null;}
+    else for(const id of [...v.occupantIds]){const p=w.people[id];if(p)dismount(w,p);}
+    v.slot+=(gang.vehicles[v.kind]??0);v.teamId=null;
+    const newKey=`cache:${gang.id}:${v.kind}:${v.slot}`;
+    w.vehicleFleet![newKey]=v;for(const id of v.occupantIds)w.people[id].vehicleKey=newKey;
     delete w.vehicleFleet![key];
   }
   for(const kind of VEHICLE_ORDER)gang.vehicles[kind]=(gang.vehicles[kind]??0)+(team.vehicles[kind]??0);

@@ -159,9 +159,12 @@ function validateReferences(w: WorldState, candidate: WorldState): void {
     const validOwner=team?team.gangId===v.gangId&&key===`team:${team.id}:${v.kind}:${v.slot}`&&v.slot<(team.vehicles[v.kind]??0):
       staff?staff.gangId===v.gangId&&['accountant','lawyer'].includes(staff.role)&&key===`staff:${staff.id}`:
       !!w.gangs[v.gangId]&&key===`cache:${v.gangId}:${v.kind}:${v.slot}`&&v.slot<(w.gangs[v.gangId].vehicles[v.kind]??0);
+    // An idle car no longer on any books (the counts were changed under it) is
+    // simply dropped on loading (garages.ts syncFleet); only one in use is damage.
+    if(!validOwner&&!v.occupantIds.length&&!v.cargo&&v.orderId==null)continue;
     if(!validOwner||!Number.isInteger(v.slot)||v.slot<0||v.occupantIds.length>VEHICLES[v.kind].capacity||
       v.driverId!=null&&!v.occupantIds.includes(v.driverId)||v.occupantIds.length>0&&v.driverId==null||
-      v.orderId!=null&&!w.orders[v.orderId])throw Error('Save has invalid vehicle ownership or seats.');
+      v.orderId!=null&&!w.orders[v.orderId]||v.garageId!=null&&!w.buildings[v.garageId])throw Error('Save has invalid vehicle ownership or seats.');
     for(const id of v.occupantIds){
       if(seats.has(id)||!w.people[id]||w.people[id].vehicleKey!==key)throw Error('Save has duplicate or missing vehicle passengers.');
       seats.add(id);

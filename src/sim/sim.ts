@@ -105,7 +105,8 @@ export class Sim {
     state.schemaVersion = 2;
     repairLegacyStreetSpawns(state);
     repairVehicleRoutes(state);
-    restoreLegacyTransport(state);
+    // Seats from before the fleet existed (a save with no fleet at all).
+    if (!state.vehicleFleet) restoreLegacyTransport(state);
     reconcileTransport(state);
     normalizeFbiInvestigations(state);
     restoreElectionTiming(state);

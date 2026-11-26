@@ -1,3 +1,4 @@
+import { syncFleet } from './garages';
 import { rollOriginalProfile, startingHostility, stanceOfHostility } from './aiStance';
 import { BLOCK_SIZE, CITIZENS_PER_BLOCK, MAYOR_INITIAL_TERM_WEEKS, SNITCH_COUNT } from './constants';
 import { BUILDING_BY_ID, BUILDING_TYPES, coverQuality } from './data/buildings';
@@ -975,5 +976,7 @@ export function createWorld(options: GameOptions): { world: WorldState; rng: Rng
   w.rngState = rng.state;
   if (options.mode === 'territory') validateTerritoryTarget(options, potentialTerritoryCapacity(w));
   forgetEntityLists(w);
+  // Every starting car stands in its gang's garage from the first morning.
+  syncFleet(w);
   return { world: w, rng };
 }

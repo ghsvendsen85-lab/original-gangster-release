@@ -166,7 +166,7 @@ describe('real crew transport',()=>{
  it('uses both available export trucks when there are drivers for both',()=>{
   const s=fixture();s.t.vehicles.truck=2;const b=Object.values(s.w.buildings).find(b=>b.typeId==='warehouse')!;b.ownerGangId=s.g.id;b.stock={liquor:300,stolen:300,counterfeit:15};
   expect(issueOrder(s.w,s.g.id,{teamId:s.t.id,type:'export',buildingIds:[b.id],opts:{manpower:2,priority:true}}).ok).toBe(true);
-  const o=s.w.orders[s.t.orderIds[0]];s.sim.launchWeek();expect(Object.keys(s.w.vehicleFleet!)).toHaveLength(2);
+  const o=s.w.orders[s.t.orderIds[0]];s.sim.launchWeek();expect(Object.values(s.w.vehicleFleet!).filter(v=>v.orderId===o.id)).toHaveLength(2);
   for(let i=0;i<1200&&!o.exportDelivery;i++)steps(s,1);
   expect(Object.values(o.exportDelivery!.goods).reduce((a,b)=>a+b,0)).toBe(615);
  });

@@ -2464,7 +2464,8 @@ export class CityRenderer {
       i++;
     }
 
-    for(const [key,car] of Object.entries(w.vehicleFleet??{}))if(!car.occupantIds.length||car.boarding){
+    // Cars put away in a garage are indoors, not drawn.
+    for(const [key,car] of Object.entries(w.vehicleFleet??{}))if(car.garageId==null&&(!car.occupantIds.length||car.boarding)){
       const at=previewVehicle(car,car.pos,this.subMinute,{x:0,y:0});
       this.pullIn(key,at,true);
       this.drivers.push({x:at.x,z:at.y,facing:roadHeading(w,car.pos),hex:0x252525,kind:car.kind});

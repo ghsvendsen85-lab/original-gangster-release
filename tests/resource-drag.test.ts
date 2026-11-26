@@ -35,7 +35,7 @@ describe('resources drag and drop (original §4.10)', () => {
   it('refuses what the buttons refuse: an empty cache, or gear dropped on the pool', () => {
     const { w, gang, team } = setup();
     gang.vehicles.truck = 0;
-    expect(applyResourceDrop(w, gang.id, { kind: 'vehicle', id: 'truck' }, { kind: 'team', teamId: team.id })).toEqual({ ok: false, error: 'None in the cache.' });
+    expect(applyResourceDrop(w, gang.id, { kind: 'vehicle', id: 'truck' }, { kind: 'team', teamId: team.id })).toEqual({ ok: false, error: 'No unassigned ones.' });
     expect(applyResourceDrop(w, gang.id, { kind: 'weapon', id: 'pistol' }, { kind: 'pool' }).ok).toBe(false);
   });
 });

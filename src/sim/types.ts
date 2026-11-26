@@ -614,6 +614,11 @@ export interface FleetVehicle {
   unloading?: { buildingId: ID; until: number };
   /** Absolute minute before which nobody gets back in (a man out for a throw). */
   boardAfter?: number;
+  /** Put away in this building's garage (an office or warehouse of its gang,
+   * six cars each): off the street until a crew takes it out (garages.ts). */
+  garageId?: ID;
+  /** The gang's own number for this car ("Coupe 3"), kept for as long as it is owned. */
+  no?: number;
 }
 
 export type DiplomacyLevel = 'alliance' | 'peace' | 'ceasefire' | 'aggression' | 'war';

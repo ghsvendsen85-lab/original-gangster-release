@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { act, useGame } from '../../app/store';
 import {
+  assignVehicle,
+  sellFleetVehicle,
   buyVehicle,
   buyWeapon,
   hireRecruit,
@@ -15,7 +17,9 @@ import {
   setPay,
   transferVehicle,
   transferWeapon,
+  type VehicleHolder,
 } from '../../sim/api';
+import { availableSpecialist } from '../../sim/specialists';
 import { GANG_COLORS, ORDERS, ORDER_GROUPS, VEHICLES, VEHICLE_ORDER, WEAPONS, WEAPON_ORDER, clockMinutes, type OrderDef } from '../../sim/constants';
 import { SKILLS, SKILL_LABELS, type Building, type Gang, type ID, type OrderType, type Person, type Skill, type VehicleId, type WeaponId, type WorldState } from '../../sim/types';
 import { buildingName, money, placeName } from '../../sim/world';
@@ -34,6 +38,7 @@ import { resourceDragProps, useResourceDrop } from '../resourceDrag';
 import { inCustody } from '../../sim/prison';
 import { hoursLabel, hoursOf, openNow } from '../../sim/cityHours';
 import { buildingList } from '../../sim/entityLists';
+import { GARAGE_CAPACITY, garageGroups, type FleetRow } from '../../sim/garages';
 /** A length of crew time as the clock counts it (a twelve-hour day: constants.ts clockMinutes). */
 export function hours(simMinutes: number): string {
   const minutes = clockMinutes(simMinutes);
@@ -476,17 +481,17 @@ function BusinessesSheet() {
 
 /** How many are in the gang's cache and with the selected lieutenant, large enough to read at a glance.
  * Clicking a count moves one away from that side, over to the other. */
-function StockCounts({ cache, crew, cost, toCache, toCrew, buy }:
-  { cache: number; crew: number; cost: number; toCache: () => void; toCrew: () => void; buy: () => void }) {
+function StockCounts({ cache, crew, cost, toCache, toCrew, buy, cacheLabel = 'Cache' }:
+  { cache: number; crew: number; cost: number; toCache: () => void; toCrew: () => void; buy: () => void; cacheLabel?: string }) {
   return (
     <div className="stock-counts">
       <button type="button" className="stock" onClick={toCache}
-        title={crew ? 'Click to move one from the lieutenant to the cache' : 'The lieutenant has none to send back'}>
+        title={crew ? (cacheLabel === 'Cache' ? 'Click to move one from the lieutenant to the cache' : 'Click to take one from the lieutenant (it becomes unassigned)') : 'The lieutenant has none to send back'}>
         <span className="label">Lieutenant</span><b>{crew}</b>
       </button>
       <button type="button" className="stock" onClick={toCrew}
-        title={cache ? 'Click to move one from the cache to the lieutenant' : 'None in the cache to hand over'}>
-        <span className="label">Cache</span><b>{cache}</b>
+        title={cache ? (cacheLabel === 'Cache' ? 'Click to move one from the cache to the lieutenant' : 'Click to give an unassigned one to the lieutenant') : (cacheLabel === 'Cache' ? 'None in the cache to hand over' : 'None unassigned to hand over')}>
+        <span className="label">{cacheLabel}</span><b>{cache}</b>
       </button>
       <button type="button" className="stock buy" onClick={buy} title="Buy one for the lieutenant">
         <span className="label">Buy</span><b>{money(cost)}</b>
@@ -520,7 +525,7 @@ function WeaponsSheet({ teamId }: { teamId: ID }) {
       </Hint>
       {WEAPON_ORDER.map((id: WeaponId) => (
         <div key={id} style={{ padding: '7px 0', borderBottom: '1px dotted var(--dots)' }}
-          {...(gang.weapons[id] ? { ...resourceDragProps({ kind: 'weapon', id }), title: 'Drag onto a lieutenant to hand one over from the cache' } : {})}>
+          {...(gang.weapons[id] ? { ...resourceDragProps({ kind: 'weapon', id }), title: 'Drag onto a lieutenant to hand over an unassigned one' } : {})}>
           <div className="row between">
             <b style={{ fontWeight: 500 }}>
               <Icon name={`weapons/${id}`} size={18} /> {WEAPONS[id].name}
@@ -539,7 +544,7 @@ function WeaponsSheet({ teamId }: { teamId: ID }) {
               Sell from Lieutenant
             </button>
             <button className="btn sm" disabled={!gang.weapons[id]} onClick={() => sell(id, false)}>
-              Sell from cache
+              Sell unassigned
             </button>
           </div>
         </div>
@@ -562,13 +567,13 @@ function VehiclesSheet({ teamId }: { teamId: ID }) {
     const toCache = seats >= crewSize;
     const result = act((s) => buyVehicle(s.world, gang.id, id, toCache ? undefined : teamId));
     if (!result) return;
-    notify(result.ok && toCache ? { ...result, message: `${result.message} The crew already has a seat for every man, so it went into the cache.` } : result);
+    notify(result.ok && toCache ? { ...result, message: `${result.message} The crew already has a seat for every man, so it is unassigned.` } : result);
   };
   return (
     <>
       {VEHICLE_ORDER.map((id: VehicleId) => (
         <div key={id} style={{ padding: '7px 0', borderBottom: '1px dotted var(--dots)' }}
-          {...(gang.vehicles[id] ? { ...resourceDragProps({ kind: 'vehicle', id }), title: 'Drag onto a lieutenant to hand one over from the cache' } : {})}>
+          {...(gang.vehicles[id] ? { ...resourceDragProps({ kind: 'vehicle', id }), title: 'Drag onto a lieutenant to hand over an unassigned one' } : {})}>
           <div className="row between">
             <b style={{ fontWeight: 500 }}>
               <Icon name={`vehicles/${id}`} size={18} /> {VEHICLES[id].name}
@@ -579,7 +584,7 @@ function VehiclesSheet({ teamId }: { teamId: ID }) {
             {VEHICLES[id].desc}
             <div className="tiny">Seats {VEHICLES[id].capacity} · cargo {VEHICLES[id].cargo} cases</div>
           </div>
-          <StockCounts cache={gang.vehicles[id] ?? 0} crew={team.vehicles[id] ?? 0} cost={VEHICLES[id].cost}
+          <StockCounts cache={gang.vehicles[id] ?? 0} crew={team.vehicles[id] ?? 0} cost={VEHICLES[id].cost} cacheLabel="Unassigned"
             toCrew={() => notify(act((s) => transferVehicle(s.world, gang.id, id, teamId, true))!)}
             toCache={() => notify(act((s) => transferVehicle(s.world, gang.id, id, teamId, false))!)}
             buy={() => buyForCrewOrCache(id)} />
@@ -588,12 +593,84 @@ function VehiclesSheet({ teamId }: { teamId: ID }) {
               Sell from Lieutenant
             </button>
             <button className="btn sm" disabled={!gang.vehicles[id]} onClick={() => sell(id, false)}>
-              Sell from cache
+              Sell unassigned
             </button>
           </div>
         </div>
       ))}
+      <FleetList />
     </>
+  );
+}
+
+const FLEET_STATE_LABEL = { garage: 'Garage', parked: 'Parked', driving: 'Driving', boarding: 'Fetching', cargo: 'Loaded' } as const;
+
+/**
+ * The gang's garages and the cars in each, then the cars out in the city
+ * (playtest, 26 November). Each car can change hands, and a car in a garage
+ * can be sold.
+ */
+function FleetList() {
+  const sim = useGame((s) => s.sim)!;
+  const requestCamera = useGame((s) => s.requestCamera);
+  useGame((s) => s.version);
+  const notify = useGame((s) => s.notify);
+  const w = sim.world, gang = sim.playerGang;
+  const { garages, outside } = garageGroups(w, gang);
+  const total = outside.length + garages.reduce((n, g) => n + g.cars.length, 0);
+  const crews = gang.teamIds.map(id => w.teams[id]).filter(Boolean);
+  const staff = (['accountant', 'lawyer'] as const).filter(role => availableSpecialist(w, gang, role));
+  const giveTo = (key: string, value: string) => {
+    const to: VehicleHolder = value === 'cache' || value === 'accountant' || value === 'lawyer' ? value : { teamId: Number(value) };
+    const result = act((s) => assignVehicle(s.world, gang.id, key, to));
+    if (result) notify(result);
+  };
+  const sell = (key: string) => {
+    const result = act((s) => sellFleetVehicle(s.world, gang.id, key));
+    if (result) notify(result);
+  };
+  const row = (r: FleetRow) => (
+    <div key={r.key} className="fleet-row">
+      <button type="button" className="fleet-show" title="Show it on the map" onClick={() => requestCamera({ ...r.pos })}>
+        <Icon name={`vehicles/${r.kind}`} size={18} />
+        <span className="fleet-name"><b>{r.name}</b>{r.garageId == null && <span className="fleet-where tiny">{r.where}</span>}</span>
+        {r.garageId == null && <span className={`fleet-state tiny ${r.state}`}>{FLEET_STATE_LABEL[r.state]}</span>}
+      </button>
+      <label className="fleet-give tiny">
+        <span className="muted">Keys:</span>
+        <select value={r.holderKey} disabled={r.busy} title={r.busy ? 'Out with a crew or carrying goods: bring it back first' : 'Give this car to'}
+          onChange={(e) => giveTo(r.key, e.target.value)}>
+          {crews.map(t => <option key={t.id} value={String(t.id)}>{t.name}</option>)}
+          <option value="cache">Unassigned</option>
+          {staff.map(role => <option key={role} value={role}>{role === 'lawyer' ? 'The lawyer' : 'The accountant'}</option>)}
+        </select>
+      </label>
+      <button type="button" className="btn sm" disabled={r.garageId == null || r.busy}
+        title={r.garageId == null ? 'Only a car in a garage can be sold' : `Sell for ${money(Math.round(VEHICLES[r.kind].cost * 0.5))}`}
+        onClick={() => sell(r.key)}>
+        Sell
+      </button>
+    </div>
+  );
+  return (
+    <div className="fleet-list">
+      <Kicker>Your vehicles ({total})</Kicker>
+      {!garages.length && <Empty>You have no garage: the HQ, offices and warehouses each have one.</Empty>}
+      {garages.map(g => (
+        <section key={g.id} className="fleet-garage">
+          <button type="button" className="fleet-garage-head" title="Show it on the map" onClick={() => requestCamera({ ...g.door })}>
+            <b>{g.isHQ ? 'HQ · ' : ''}{g.name}</b>
+            <span className={`fleet-bays tiny${g.cars.length >= GARAGE_CAPACITY ? ' full' : ''}`}>{g.cars.length}/{GARAGE_CAPACITY} bays</span>
+          </button>
+          {g.cars.length ? g.cars.map(row) : <div className="muted tiny fleet-empty">Empty</div>}
+        </section>
+      ))}
+      <section className="fleet-garage">
+        <div className="fleet-garage-head"><b>Out in the city</b><span className="fleet-bays tiny">{outside.length}</span></div>
+        {outside.length ? outside.map(row) : <div className="muted tiny fleet-empty">Every car is in a garage.</div>}
+      </section>
+      <div className="muted tiny">Only a car in a garage can be sold. A car that finds every garage full is left at the kerb. A crew far from its own car takes a nearer unassigned one of the same kind.</div>
+    </div>
   );
 }
 

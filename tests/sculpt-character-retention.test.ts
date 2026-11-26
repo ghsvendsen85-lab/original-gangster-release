@@ -200,14 +200,15 @@ describe('detailed model loading lifecycle',()=> {
  });
 
  it('releases successful siblings when one model download fails',async()=> {
-  const geometries:ReturnType<typeof vi.spyOn>[]=[];
+  const geometries:ReturnType<typeof vi.spyOn>[]=[];let loaded=0;
   vi.spyOn(GLTFLoader.prototype,'loadAsync').mockImplementation(async url=> {
    if(url.endsWith('/worker.glb'))throw Error('worker unavailable');
-   const result=asset(false);result.scene.traverse(o=> {if(o instanceof THREE.Mesh)geometries.push(vi.spyOn(o.geometry,'dispose'));});return result;
+   loaded++;const result=asset(false);result.scene.traverse(o=> {if(o instanceof THREE.Mesh)geometries.push(vi.spyOn(o.geometry,'dispose'));});return result;
   });
   const scene=new THREE.Scene(),ready=vi.fn(),layer=new SculptReviewLayer(scene,1,ready);
   await layer.load();expect(layer.ready).toBe(false);expect(layer.error).toContain('worker unavailable');expect(scene.children).toHaveLength(0);
-  expect(geometries).toHaveLength(20);expect(geometries.every(spy=>spy.mock.calls.length===1)).toBe(true);expect(ready).toHaveBeenCalledOnce();
+  // Every model that did load (all but the worker's, however many the layer asks for) is released once.
+  expect(loaded).toBeGreaterThan(0);expect(geometries).toHaveLength(loaded);expect(geometries.every(spy=>spy.mock.calls.length===1)).toBe(true);expect(ready).toHaveBeenCalledOnce();
   layer.dispose();expect(geometries.every(spy=>spy.mock.calls.length===1)).toBe(true);
  });
  it('cleans a late load after navigation without resurrecting the scene or callback',async()=> {

@@ -4652,3 +4652,104 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .debrief-reopen { margin-bottom: 8px; }
 @media (max-width: 620px) { .debrief { grid-template-columns: 1fr; } }
 
+
+/* Every car the gang owns (playtest, 26 November). */
+.fleet-list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fleet-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 5px 4px;
+  border-bottom: 1px dotted var(--dots);
+}
+.fleet-show {
+  flex: 1 1 260px;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 20px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 2px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: var(--cur-point, pointer);
+}
+.fleet-show:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+.fleet-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.fleet-where {
+  color: var(--ink-2);
+}
+.fleet-state {
+  padding: 1px 6px;
+  border: 1px solid var(--brass-line);
+  border-radius: 3px;
+  white-space: nowrap;
+}
+.fleet-state.driving, .fleet-state.cargo, .fleet-state.boarding {
+  border-color: var(--brass);
+  font-weight: 600;
+}
+.fleet-give {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+}
+.fleet-give select {
+  max-width: 160px;
+  font: inherit;
+  padding: 2px 4px;
+  border: 1px solid var(--brass-line);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.4);
+  color: var(--ink);
+}
+.fleet-garage {
+  margin-top: 8px;
+}
+.fleet-garage-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 4px 3px;
+  border: 0;
+  border-bottom: 1px solid var(--brass-line);
+  background: rgba(0, 0, 0, 0.05);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+button.fleet-garage-head {
+  cursor: var(--cur-point, pointer);
+}
+button.fleet-garage-head:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+.fleet-bays {
+  white-space: nowrap;
+  color: var(--ink-2);
+}
+.fleet-bays.full {
+  color: var(--ink);
+  font-weight: 600;
+}
+.fleet-empty {
+  padding: 4px 6px;
+}

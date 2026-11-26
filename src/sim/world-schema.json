@@ -668,6 +668,19 @@
             ]
           }
         },
+        "turfPlan": {
+          "optional": true,
+          "shape": {
+            "union": [
+              {
+                "literal": false
+              },
+              {
+                "literal": true
+              }
+            ]
+          }
+        },
         "bureauGauges": {
           "optional": true,
           "shape": {
@@ -3169,6 +3182,16 @@
             "ref": "T3"
           }
         },
+        "prisonIds": {
+          "optional": true,
+          "shape": {
+            "union": [
+              {
+                "ref": "T3"
+              }
+            ]
+          }
+        },
         "accountantId": {
           "optional": false,
           "shape": {
@@ -4467,6 +4490,19 @@
             ]
           }
         },
+        "urgent": {
+          "optional": true,
+          "shape": {
+            "union": [
+              {
+                "literal": false
+              },
+              {
+                "literal": true
+              }
+            ]
+          }
+        },
         "recruitKind": {
           "optional": true,
           "shape": {
@@ -5577,6 +5613,26 @@
           }
         },
         "boardAfter": {
+          "optional": true,
+          "shape": {
+            "union": [
+              {
+                "type": "number"
+              }
+            ]
+          }
+        },
+        "garageId": {
+          "optional": true,
+          "shape": {
+            "union": [
+              {
+                "type": "number"
+              }
+            ]
+          }
+        },
+        "no": {
           "optional": true,
           "shape": {
             "union": [

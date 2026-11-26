@@ -1,5 +1,5 @@
 import type { Gang, Person, WorldState } from './types';
-import { dismount } from './transport';
+import { attachFleetVehicle, dismount } from './transport';
 
 export type SpecialistRole = 'accountant' | 'lawyer';
 
@@ -14,9 +14,13 @@ export function availableSpecialist(w: WorldState, gang: Gang, role: SpecialistR
 export function reclaimStaffVehicle(w: WorldState, gang: Gang, role: SpecialistRole): void {
   const id = role === 'accountant' ? gang.accountantId : gang.lawyerId;
   const p = id == null ? undefined : w.people[id];
+  const car = p ? w.vehicleFleet?.[`staff:${p.id}`] ?? null : null;
   if (p) {dismount(w,p);if(w.vehicleFleet)delete w.vehicleFleet[`staff:${p.id}`];}
   const vehicle = gang.staffVehicles?.[role];
   if (!vehicle) return;
-  gang.vehicles[vehicle] = (gang.vehicles[vehicle] ?? 0) + 1;
+  // Back on the cache's books: the same car, where it was left.
+  const slot = gang.vehicles[vehicle] ?? 0;
+  attachFleetVehicle(w, car && car.kind === vehicle ? car : null, `cache:${gang.id}:${vehicle}:${slot}`, { teamId: null, staffId: null, slot });
+  gang.vehicles[vehicle] = slot + 1;
   gang.staffVehicles![role] = null;
 }
