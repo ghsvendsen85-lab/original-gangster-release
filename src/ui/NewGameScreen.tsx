@@ -71,7 +71,7 @@ export function NewGameScreen() {
   };
   const beginGame = () => {
     try {
-      startGame({ ...options, cityLayout: 'varied', playerPortrait: options.playerPortrait || portraitFromName(options.playerName) });
+      startGame({ ...options, cityLayout: 'varied', turfPlan: true, playerPortrait: options.playerPortrait || portraitFromName(options.playerName) });
     } catch (error) {
       if (error instanceof TerritoryTargetError) {
         setCapacity({ key: capacityKey(options), maximum: error.maximum });

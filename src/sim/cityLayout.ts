@@ -166,6 +166,26 @@ export function streetRouteNodes(w: WorldState, from: Vec2, to: Vec2, zig = fals
   g.paths.set(key, route); return route;
 }
 
+/** Lay an urban block out from the reviewed kit its district calls for. Only
+ * for new-city construction, before the block has buildings. */
+export function assembleBlockKit(w: WorldState, block: Block): void {
+  if (block.layout?.use !== 'urban' || block.layout.mergedInto != null) return;
+  const placement = chooseBlockModule(block, w.options.seed), module = BLOCK_MODULE_BY_ID[placement.id];
+  block.layout.module = placement;
+  const origin = blockRect(block);
+  for (const id of block.lotIds) delete w.lots[id];
+  block.lotIds = [];
+  for (const slot of module.plots) {
+    const r = moduleRect(module, placement.turn, slot), id = w.nextId++;
+    const bounds = { ...r, x: origin.x + r.x, y: origin.y + r.y };
+    const margin = moduleSetback(slot);
+    w.lots[id] = { id, blockId: block.id, index: slot.index, buildingId: -1, bounds,
+      footprint: { w: r.w - margin * 2, h: r.h - margin * 2 },
+      center: { x: bounds.x + r.w / 2, y: bounds.y + r.h / 2 }, facing: moduleFacing(slot.facing, placement.turn) };
+    block.lotIds.push(id);
+  }
+}
+
 /** Called before buildings or people exist. Existing saved cities are never repartitioned. */
 export function layOutCity(w: WorldState, rng: Rng): void {
   const reserve = (gx: number, gy: number, sx: number, sy: number, use: 'urban' | 'park' | 'civic', name?: string, landmark?: string) => {
@@ -238,23 +258,7 @@ export function layOutCity(w: WorldState, rng: Rng): void {
   }
   // Assemble the urban blocks from reviewed kits. Parcels are saved explicitly;
   // this is only new-city construction, never a per-frame layout or save migration.
-  for (const block of activeBlocks(w)) {
-    if (block.layout?.use !== 'urban') continue;
-    const placement = chooseBlockModule(block, w.options.seed), module = BLOCK_MODULE_BY_ID[placement.id];
-    block.layout.module = placement;
-    const origin = blockRect(block);
-    for (const id of block.lotIds) delete w.lots[id];
-    block.lotIds = [];
-    for (const slot of module.plots) {
-      const r = moduleRect(module, placement.turn, slot), id = w.nextId++;
-      const bounds = { ...r, x: origin.x + r.x, y: origin.y + r.y };
-      const margin = moduleSetback(slot);
-      w.lots[id] = { id, blockId: block.id, index: slot.index, buildingId: -1, bounds,
-        footprint: { w: r.w - margin * 2, h: r.h - margin * 2 },
-        center: { x: bounds.x + r.w / 2, y: bounds.y + r.h / 2 }, facing: moduleFacing(slot.facing, placement.turn) };
-      block.lotIds.push(id);
-    }
-  }
+  for (const block of activeBlocks(w)) assembleBlockKit(w, block);
   w.cityLayout = { version: 1, tramLines: [] };
   // Two connected routes through the street graph. Rails never cross a closed site.
   // Square cities keep their saved routes: both midpoints equal gridW / 2 there.

@@ -344,7 +344,7 @@ export function OptionsTab() {
               const o = w.options;
               setQuit(null);
               if (quit === 'restart') startGame({ ...o });
-              else if (quit === 'fresh') startGame({ ...o, cityLayout: 'varied', seed: Math.floor(Math.random() * 0xffffffff) >>> 0 });
+              else if (quit === 'fresh') startGame({ ...o, cityLayout: 'varied', turfPlan: true, seed: Math.floor(Math.random() * 0xffffffff) >>> 0 });
               else setScreen('menu');
             }}
             onNo={() => setQuit(null)}

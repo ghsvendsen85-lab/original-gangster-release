@@ -853,6 +853,10 @@ export interface GameOptions {
    * before the original 40 × 32 grid was restored. */
   cityHeight?: number;
   cityLayout?: 'classic' | 'varied';
+  /** Varied cities only: the turf plan (src/sim/turfPlan.ts) of mirrored HQs
+   * with matching starter kits, a rich contested downtown, tram-side shops and
+   * a works district in each quarter (playtest, 24 November). */
+  turfPlan?: boolean;
   /** Show the Accountant's FBI suspicion and evidence gauges and the Suspicion
    * graph. The original showed neither, so a new game leaves them off unless
    * asked for. Absent in games begun before this was chosen with the game:

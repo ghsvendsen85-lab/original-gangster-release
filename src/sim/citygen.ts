@@ -51,6 +51,7 @@ import { CENTRE_LOT, blockCenter, gangMembers, lotCenter } from './world';
 import { originalStartingWage } from './originalWages';
 import { protectionFee } from './premises';
 import { forgetEntityLists } from './entityLists';
+import { FACTORY_TYPES, TURF_KIT, WORKS_KIT, centreRatio, chooseTurfHQs, nearTurf, turfIndustrial, valueByTramsAndCentre } from './turfPlan';
 
 export function newId(w: WorldState): ID {
   return w.nextId++;
@@ -407,7 +408,10 @@ export function createWorld(options: GameOptions): { world: WorldState; rng: Rng
   BUILDING_BY_ID[EMPTY_TYPE.id] = EMPTY_TYPE;
 
   const gangIds: ID[] = [1, 2, 3, 4]; // ids assigned below, kept stable
-  const industrialEdge = rng.int(0, 3);
+  const turf = !original && options.cityLayout === 'varied' && !!options.turfPlan;
+  // The turf plan has no industrial edge: each quarter has its own works district.
+  const industrialEdge = turf ? (rng.int(0, 3), -1) : rng.int(0, 3);
+  let turfHQs: Block[] | null = null;
 
   const halfW = Math.floor(width / 2), halfH = Math.floor(height / 2);
   const corners: ((b: Block) => boolean)[] = [
@@ -421,7 +425,7 @@ export function createWorld(options: GameOptions): { world: WorldState; rng: Rng
     // ------------------------------------------------------------ blocks & lots
     for (let gy = 0; gy < height; gy++) {
       for (let gx = 0; gx < width; gx++) {
-        const district = districtFor(gx, gy, width, height, industrialEdge);
+        const district = turf && turfIndustrial(gx, gy, width, height) ? 'industrial' : districtFor(gx, gy, width, height, industrialEdge);
         const block: Block = {
           id: w.blocks.length,
           gx,
@@ -464,6 +468,7 @@ export function createWorld(options: GameOptions): { world: WorldState; rng: Rng
     }
 
     if (options.cityLayout === 'varied') layOutCity(w, rng);
+    if (turf) valueByTramsAndCentre(w);
 
     // ------------------------------------------------------------ buildings
     for (const block of w.blocks) {
@@ -534,6 +539,56 @@ export function createWorld(options: GameOptions): { world: WorldState; rng: Rng
     for (let i = 0; i < 3; i++) placeSpecial('lawFirm', (b) => b.district === 'downtown' || b.district === 'civic');
     for (let i = 0; i < 3; i++) placeSpecial('warehouse', (b) => b.district === 'industrial');
 
+    if (turf) {
+      // The contested middle: the grand hotels stand downtown, by the main bank.
+      for (let i = 0; i < 2; i++) placeSpecial('hotelLarge', (b) => b.district === 'downtown' && centreRatio(w, b) < 0.3);
+      // Replace one ordinary building near a site with the type the kit lacks.
+      const convert = (lots: Lot[], typeIds: readonly string[]) => {
+        const lot = lots.find(l => !placedSpecials.has(l.buildingId));
+        if (!lot) return false;
+        const blk = w.blocks[lot.blockId];
+        delete w.buildings[lot.buildingId];
+        placedSpecials.add(makeBuilding(w, lot, blk, rng.pick([...typeIds]), gangIds).id);
+        return true;
+      };
+      const lotsWhere = (inArea: (b: Block) => boolean, ok: (b: Building) => boolean) => rng.shuffle(w.blocks
+        .filter(b => inArea(b) && b.layout?.use !== 'civic')
+        .flatMap(b => b.lotIds.map(id => w.lots[id]))
+        .filter(l => l.index !== CENTRE_LOT && w.buildings[l.buildingId] && ok(w.buildings[l.buildingId])));
+      const count = (inArea: (b: Block) => boolean, ok: (b: Building) => boolean) =>
+        lotsWhere(inArea, ok).length;
+
+      // A works district in each quarter: a few warehouses and some factories.
+      for (const q of corners) {
+        const works = (b: Block) => q(b) && b.district === 'industrial';
+        const spare = (b: Building) => b.cls === 'industrial' && !b.typeId.match(/^(docks|railroad|tradeUnion|warehouse|foundry|mill|cannery)$/);
+        const plain = (b: Building) => b.cls === 'industrial' && !['docks', 'railroad', 'tradeUnion'].includes(b.typeId);
+        for (let n = count(works, b => b.typeId === 'warehouse'); n < WORKS_KIT.warehouses; n++)
+          if (!convert(lotsWhere(works, spare).concat(lotsWhere(works, b => plain(b) && !(FACTORY_TYPES as readonly string[]).includes(b.typeId) && b.typeId !== 'warehouse')), ['warehouse'])) break;
+        for (let n = count(works, b => (FACTORY_TYPES as readonly string[]).includes(b.typeId)); n < WORKS_KIT.factories; n++)
+          if (!convert(lotsWhere(works, spare), FACTORY_TYPES)) break;
+      }
+
+      // HQ sites near the middle of each quarter, each with the same starter kit within two blocks.
+      const hasFront = (b: Block) => b.lotIds.some(id => {
+        const lot = w.lots[id], bb = w.buildings[lot.buildingId];
+        return lot.index !== CENTRE_LOT && !!bb && ['commercial', 'industrial', 'tenement', 'charity'].includes(bb.cls) && bb.state === 'trading';
+      });
+      turfHQs = chooseTurfHQs(w, corners,
+        b => b.layout?.mergedInto == null && b.layout?.use !== 'civic' && (b.district === 'commercial' || b.district === 'residential') &&
+          b.lotIds.some(id => w.lots[id].index === CENTRE_LOT) && hasFront(b),
+        items => rng.pick(items));
+      for (const hq of turfHQs ?? []) {
+        const around = (b: Block) => nearTurf(hq, b) && b.id !== hq.id;
+        const homes = (b: Building) => b.cls === 'residential' || b.cls === 'tenement';
+        const shopTypes = BUILDING_TYPES.filter(t => t.cls === 'commercial' && (t.weight.commercial ?? 0) > 0 && !t.recruit && !t.special).map(t => t.id);
+        for (const [typeId, want] of [['poolHall', TURF_KIT.poolHall], ['gym', TURF_KIT.gym]] as const)
+          for (let n = count(around, b => b.typeId === typeId); n < want; n++)
+            if (!convert(lotsWhere(around, homes).concat(lotsWhere(around, b => b.cls === 'commercial' && !BUILDING_BY_ID[b.typeId]?.recruit)), [typeId])) break;
+        for (let n = count(around, b => b.cls === 'commercial' && !BUILDING_BY_ID[b.typeId]?.recruit); n < TURF_KIT.shops; n++)
+          if (!convert(lotsWhere(around, homes), shopTypes)) break;
+      }
+    }
   }
   // People never start on the river or in the middle of an avenue.
   const streetBlocks = activeBlocks(w).filter(hasFootway);
@@ -707,7 +762,8 @@ export function createWorld(options: GameOptions): { world: WorldState; rng: Rng
         pred(b) &&
         (b.district === 'commercial' || b.district === 'residential'),
     );
-    const hqBlock = originalHQs ? w.blocks[originalHQs[idx].blockId] : rng.pick(candidates.length ? candidates : officeBlocks);
+    const hqBlock = originalHQs ? w.blocks[originalHQs[idx].blockId]
+      : turfHQs ? turfHQs[corners.indexOf(pred)] : rng.pick(candidates.length ? candidates : officeBlocks);
 
     const bossFemale = isPlayer ? options.playerFemale : rng.chance(0.2);
     const boss = createPerson(w, rng, 'boss', hqBlock.center, {
