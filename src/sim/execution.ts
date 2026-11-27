@@ -40,6 +40,7 @@ import { isExportTerminal, nearestExportTerminal, recoverExportGoods } from './e
 import { clearDestination, setDestination, stepPerson } from './movement';
 import { trafficContext } from './traffic';
 import { allocateWeapons, attackProfile, type Loadout } from './weapons';
+import { armForTheWeek, spendExplosive } from './armoury';
 import type { Rng } from './rng';
 import type {
   Building,
@@ -589,6 +590,8 @@ function assignOrder(w: WorldState, team: Team, order: Order, atWeekStart = fals
 /** Called when the working week begins: hand every queued order its hoods. */
 export function beginWeekOrders(w: WorldState): void {
   resetWeekTransport(w);
+  // Over the weekend the crews arm up from the gang's armouries.
+  armForTheWeek(w);
   for(const p of Object.values(w.people))if(p.gangId!=null&&['hood','lieutenant'].includes(p.role)&&p.buildingId==null&&!p.vehicleKey){clearDestination(p);p.streetOrder=null;p.inVehicle=false;}
   for (const team of Object.values(w.teams)) {
     for (const oid of team.orderIds) {
@@ -1815,10 +1818,9 @@ function resolveTarget(
       // Before the explosives are drawn: a bomb is not spent on a job already done.
       if (doneByAnother(building)) { standDown(building); break; }
       if (building.state === 'destroyed') return finishOrder(w, order, 'The site is gone.');
-      if ((team.weapons.explosives ?? 0) <= 0 && (gang.weapons.explosives ?? 0) <= 0)
+      // The explosive one of the men on the job carries goes first (armoury.ts).
+      if (!spendExplosive(w, gang.id, team.id, actors.map(p => p.id)))
         return finishOrder(w, order, 'No explosives were available.');
-      if ((team.weapons.explosives ?? 0) > 0) team.weapons.explosives--;
-      else gang.weapons.explosives--;
       stepOut(w,lead,here);presentThrow(w,lead,here,'bomb');
 
       const success = rng.chance(orderChance(actors, 'bomb', loadout, 0.3));

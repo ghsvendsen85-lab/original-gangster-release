@@ -4753,3 +4753,152 @@ button.fleet-garage-head:hover {
 .fleet-empty {
   padding: 4px 6px;
 }
+
+/* Each man's three places for weapons (armoury.ts). */
+.kit-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 5px 6px;
+  border-bottom: 1px dotted var(--dots);
+}
+.kit-man {
+  all: unset;
+  cursor: pointer;
+  min-width: 130px;
+}
+.kit-man:hover b {
+  text-decoration: underline;
+}
+.kit-slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1;
+}
+.kit-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border: 1px solid var(--dots);
+  border-radius: 3px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.kit-slot.empty {
+  border-style: dashed;
+}
+/* The inventory grid: one wide slot for a large gun, square ones for a small gun and an explosive. */
+.inv-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  gap: 6px;
+  flex: 1;
+  min-width: 220px;
+}
+.inv-slot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 62px;
+  padding: 4px;
+  border: 1px solid var(--dots);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.04);
+  cursor: grab;
+}
+.inv-slot.empty {
+  border-style: dashed;
+  cursor: default;
+}
+.inv-slot.over,
+.armoury-rack.over {
+  outline: 2px solid var(--accent, #b8892b);
+  outline-offset: -2px;
+  background: rgba(184, 137, 43, 0.14);
+}
+.inv-slot .inv-ghost {
+  color: #9a9a9a;
+  opacity: 0.45;
+}
+.inv-slot .inv-name {
+  text-align: center;
+  line-height: 1.1;
+}
+.inv-slot.empty .inv-name {
+  color: #8c8c8c;
+}
+.rack-item {
+  cursor: grab;
+}
+.rack-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  flex: none;
+  margin-right: 6px;
+  height: 30px;
+  border: 1px solid var(--dots);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.04);
+}
+.fleet-show.rack-item {
+  grid-template-columns: 36px 1fr;
+}
+
+/* Each man's three weapon slots beside his name in the crew list (playtest, 26 November). */
+.paper-strip .roster-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px dotted var(--dots);
+}
+.paper-strip .roster-row > .row-line {
+  flex: 1;
+  min-width: 0;
+  border-bottom: none;
+}
+.inv-grid.compact {
+  flex: none;
+  min-width: 0;
+  width: 112px;
+  gap: 3px;
+}
+.inv-slot.compact {
+  min-height: 26px;
+  padding: 1px;
+}
+
+/* The Weapons tab's buy row: one button per kind, delivered to the HQ armoury. */
+.weapon-buy {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 6px;
+  margin: 4px 0 12px;
+}
+.weapon-buy-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  border: 1px solid var(--dots);
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.04);
+  cursor: pointer;
+  text-align: center;
+  line-height: 1.1;
+}
+.weapon-buy-btn:hover:not(:disabled) {
+  background: rgba(184, 134, 42, 0.14);
+}
+.weapon-buy-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

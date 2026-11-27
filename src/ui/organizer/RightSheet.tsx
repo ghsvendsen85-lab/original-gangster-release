@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { act, useGame } from '../../app/store';
 import {
   assignVehicle,
+  equipWeapon,
+  passWeapon,
+  unequipWeapon,
+  sellGun,
   sellFleetVehicle,
   buyVehicle,
   buyWeapon,
@@ -13,10 +17,8 @@ import {
   promote,
   sackPerson,
   sellVehicle,
-  sellWeapon,
   setPay,
   transferVehicle,
-  transferWeapon,
   type VehicleHolder,
 } from '../../sim/api';
 import { availableSpecialist } from '../../sim/specialists';
@@ -39,6 +41,7 @@ import { inCustody } from '../../sim/prison';
 import { hoursLabel, hoursOf, openNow } from '../../sim/cityHours';
 import { buildingList } from '../../sim/entityLists';
 import { GARAGE_CAPACITY, garageGroups, type FleetRow } from '../../sim/garages';
+import { GUN_SLOTS, SLOT_LABEL, armouryGroups, slotOf, type ArmouryGroup, type GunSlot, type RackRow } from '../../sim/armoury';
 /** A length of crew time as the clock counts it (a twelve-hour day: constants.ts clockMinutes). */
 export function hours(simMinutes: number): string {
   const minutes = clockMinutes(simMinutes);
@@ -505,50 +508,22 @@ function WeaponsSheet({ teamId }: { teamId: ID }) {
   const gang = sim.playerGang;
   const team = sim.world.teams[teamId];
   if (!team) return null;
-  const sell = (id: WeaponId, fromTeam: boolean) => notify(act((s) => sellWeapon(s.world, gang.id, id, fromTeam ? teamId : undefined))!);
-  /** A gun bought for a crew that already has one for every man (lieutenant
-   * included) goes into the cache instead. Explosives always go to the crew. */
-  const buyForCrewOrCache = (id: WeaponId) => {
-    const crewSize = 1 + team.memberIds.length;
-    const guns = Object.entries(team.weapons).reduce((n, [k, c]) => n + (k === 'explosives' ? 0 : c), 0);
-    const toCache = id !== 'explosives' && guns >= crewSize;
-    const result = act((s) => buyWeapon(s.world, gang.id, id, toCache ? undefined : teamId));
-    if (!result) return;
-    notify(result.ok && toCache ? { ...result, message: `${result.message} Every man in the crew is armed, so it went into the cache.` } : result);
-  };
+  /** Bought guns go unassigned onto the HQ rack, for any of the gang's men to take. */
+  const buy = (id: WeaponId) => notify(act((s) => buyWeapon(s.world, gang.id, id))!);
   return (
     <>
-      <Hint>
-        Each active hood carries one firearm from this crew’s stock. Priority jobs and working hoods
-        get first choice, then the best shots. Spare guns stay with the crew; the cache equips unassigned
-        gang members. Hoods without a gun must close in to fight. Explosives are only for bombing jobs.
-      </Hint>
-      {WEAPON_ORDER.map((id: WeaponId) => (
-        <div key={id} style={{ padding: '7px 0', borderBottom: '1px dotted var(--dots)' }}
-          {...(gang.weapons[id] ? { ...resourceDragProps({ kind: 'weapon', id }), title: 'Drag onto a lieutenant to hand over an unassigned one' } : {})}>
-          <div className="row between">
-            <b style={{ fontWeight: 500 }}>
-              <Icon name={`weapons/${id}`} size={18} /> {WEAPONS[id].name}
-            </b>
-            <span className="mono">{money(WEAPONS[id].cost)}</span>
-          </div>
-          <div className="muted" style={{ margin: '2px 0 5px' }}>
-            {WEAPONS[id].desc}
-          </div>
-          <StockCounts cache={gang.weapons[id] ?? 0} crew={team.weapons[id] ?? 0} cost={WEAPONS[id].cost}
-            toCrew={() => notify(act((s) => transferWeapon(s.world, gang.id, id, teamId, true))!)}
-            toCache={() => notify(act((s) => transferWeapon(s.world, gang.id, id, teamId, false))!)}
-            buy={() => buyForCrewOrCache(id)} />
-          <div className="row wrap" style={{ gap: 4 }}>
-            <button className="btn sm" disabled={!team.weapons[id]} onClick={() => sell(id, true)}>
-              Sell from Lieutenant
-            </button>
-            <button className="btn sm" disabled={!gang.weapons[id]} onClick={() => sell(id, false)}>
-              Sell unassigned
-            </button>
-          </div>
-        </div>
-      ))}
+      <Kicker>Buy · delivered to the HQ armoury</Kicker>
+      <div className="weapon-buy">
+        {WEAPON_ORDER.map((id: WeaponId) => (
+          <button key={id} type="button" className="weapon-buy-btn" onClick={() => buy(id)} disabled={gang.cash < WEAPONS[id].cost}
+            title={`${WEAPONS[id].name}: ${WEAPONS[id].desc}`}>
+            <Icon name={`weapons/${id}`} size={22} />
+            <span className="tiny">{WEAPONS[id].name}</span>
+            <b className="mono tiny">{money(WEAPONS[id].cost)}</b>
+          </button>
+        ))}
+      </div>
+      <ArmouryList />
     </>
   );
 }
@@ -670,6 +645,145 @@ function FleetList() {
         {outside.length ? outside.map(row) : <div className="muted tiny fleet-empty">Every car is in a garage.</div>}
       </section>
       <div className="muted tiny">Only a car in a garage can be sold. A car that finds every garage full is left at the kerb. A crew far from its own car takes a nearer unassigned one of the same kind.</div>
+    </div>
+  );
+}
+
+/** A weapon being dragged in the inventory grid: off a rack, or out of a man's slot. */
+type GunDrag = { from: 'rack'; key: string; kind: WeaponId } | { from: 'man'; personId: ID; slot: GunSlot; kind: WeaponId };
+const GUN_MIME = 'application/x-og-gun';
+/** The slot it fits, readable while dragging (the data itself is not, until the drop). */
+const gunSlotMime = (slot: GunSlot) => `application/x-og-gun-${slot}`;
+const SLOT_GHOST: Record<GunSlot, WeaponId> = { large: 'rifle', small: 'pistol', explosive: 'explosives' };
+
+function startGunDrag(e: React.DragEvent, item: GunDrag) {
+  e.dataTransfer.setData(GUN_MIME, JSON.stringify(item));
+  e.dataTransfer.setData(gunSlotMime(slotOf(item.kind)), '1');
+  e.dataTransfer.effectAllowed = 'move';
+  e.stopPropagation();
+}
+function readGunDrag(e: React.DragEvent): GunDrag | null {
+  try { return JSON.parse(e.dataTransfer.getData(GUN_MIME)) as GunDrag; } catch { return null; }
+}
+
+/** Drop-target props for the inventory grid, and whether something that fits is over it. */
+function useGunDrop(accepts: (types: readonly string[]) => boolean, onDrop: (item: GunDrag) => void): [Record<string, unknown>, boolean] {
+  const [over, setOver] = useState(false);
+  return [{
+    onDragOver: (e: React.DragEvent) => {
+      if (!accepts(e.dataTransfer.types)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (!over) setOver(true);
+    },
+    onDragLeave: (e: React.DragEvent) => {
+      const next = e.relatedTarget as Node | null;
+      if (!next || !(e.currentTarget as Node).contains(next)) setOver(false);
+    },
+    onDrop: (e: React.DragEvent) => {
+      setOver(false);
+      const item = readGunDrag(e);
+      if (!item) return;
+      e.preventDefault();
+      e.stopPropagation();
+      onDrop(item);
+    },
+  }, over];
+}
+
+/** One of a man's three places: a wide one for a large gun, square ones for a small gun and an explosive. */
+function InvSlot({ personId, place, kind, compact }: { personId: ID; place: GunSlot; kind: WeaponId | null; compact?: boolean }) {
+  const sim = useGame((s) => s.sim)!;
+  const notify = useGame((s) => s.notify);
+  const gangId = sim.playerGang.id;
+  const [drop, over] = useGunDrop(types => types.includes(gunSlotMime(place)), (item) => {
+    if (slotOf(item.kind) !== place) return;
+    const result = item.from === 'rack'
+      ? act((s) => equipWeapon(s.world, gangId, item.key, personId))
+      : act((s) => passWeapon(s.world, gangId, item.personId, item.slot, personId));
+    if (result) notify(result);
+  });
+  const ghost = SLOT_GHOST[place];
+  return (
+    <div className={`inv-slot ${place}${kind ? '' : ' empty'}${over ? ' over' : ''}${compact ? ' compact' : ''}`} {...drop}
+      onClick={(e) => e.stopPropagation()}
+      draggable={!!kind}
+      onDragStart={kind ? (e) => startGunDrag(e, { from: 'man', personId, slot: place, kind }) : undefined}
+      title={kind ? `${WEAPONS[kind].name}: drag onto an armoury to leave it there, or onto another man to hand it over` : `${SLOT_LABEL[place]}: empty. Drag one here from an armoury.`}>
+      <Icon name={`weapons/${kind ?? ghost}`} size={compact ? (place === 'large' ? 24 : 18) : place === 'large' ? 40 : 30} className={kind ? 'inv-icon' : 'inv-ghost'} />
+      {!compact && <span className="inv-name tiny">{kind ? WEAPONS[kind].name : SLOT_LABEL[place]}</span>}
+    </div>
+  );
+}
+
+/** A man's three slots, small, for the crew list in the lieutenant window. */
+export function KitSlots({ personId, slots }: { personId: ID; slots: Record<GunSlot, WeaponId | null> }) {
+  return <div className="inv-grid compact">{GUN_SLOTS.map(place => <InvSlot key={place} personId={personId} place={place} kind={slots[place]} compact />)}</div>;
+}
+
+/** One rack: its weapons, each kind an icon to drag onto a man; a man's weapon dropped here is left on it. */
+function ArmouryRack({ a }: { a: ArmouryGroup }) {
+  const sim = useGame((s) => s.sim)!;
+  const notify = useGame((s) => s.notify);
+  const requestCamera = useGame((s) => s.requestCamera);
+  const gangId = sim.playerGang.id;
+  const [drop, over] = useGunDrop(types => types.includes(GUN_MIME), (item) => {
+    if (item.from !== 'man') return;
+    const result = act((s) => unequipWeapon(s.world, gangId, item.personId, item.slot, a.id));
+    if (result) notify(result);
+  });
+  // One line per kind, whoever's stock it is.
+  const rows = [...a.rows.reduce((m, r) => {
+    const had = m.get(r.kind);
+    m.set(r.kind, had ? { ...had, count: had.count + r.count, keys: [...had.keys, ...r.keys] } : r);
+    return m;
+  }, new Map<WeaponId, RackRow>()).values()];
+  const sellOne = (key: string) => {
+    const result = act((s) => sellGun(s.world, gangId, key));
+    if (result) notify(result);
+  };
+  return (
+    <section className={`fleet-garage armoury-rack${over ? ' over' : ''}`} {...drop}>
+      <button type="button" className="fleet-garage-head" title="Show it on the map" onClick={() => requestCamera({ ...a.door })}>
+        <b>{a.isHQ ? 'HQ · ' : ''}{a.name}</b>
+        <span className="fleet-bays tiny">{a.total} on the rack</span>
+      </button>
+      {rows.length ? rows.map(r => (
+        <div key={r.kind} className="fleet-row">
+          <span className="fleet-show rack-item" draggable onDragStart={(e) => startGunDrag(e, { from: 'rack', key: r.keys[0], kind: r.kind })}
+            title={`Drag onto a man's ${SLOT_LABEL[slotOf(r.kind)].toLowerCase()} slot in the crew list to equip him`}>
+            <span className="rack-icon"><Icon name={`weapons/${r.kind}`} size={26} /></span>
+            <span className="fleet-name"><b>{r.name} ×{r.count}</b></span>
+          </span>
+          <button type="button" className="btn sm" title={`Sell one for ${money(Math.round(WEAPONS[r.kind].cost * 0.5))}`} onClick={() => sellOne(r.keys[0])}>
+            Sell one
+          </button>
+        </div>
+      )) : <div className="muted tiny fleet-empty">Empty. Drag a man's weapon here to leave it.</div>}
+    </section>
+  );
+}
+
+/**
+ * The armouries (playtest, 26 November): what is on each rack (the men's
+ * slots are in the crew list of the lieutenant window), counted by kind.
+ */
+function ArmouryList() {
+  const sim = useGame((s) => s.sim)!;
+  useGame((s) => s.version);
+  const w = sim.world, gang = sim.playerGang;
+  const { armouries, loose } = armouryGroups(w, gang);
+  return (
+    <div className="fleet-list">
+      <Kicker>Armouries</Kicker>
+      {!armouries.length && <Empty>You have no armoury: the HQ, offices and warehouses each have one.</Empty>}
+      {armouries.map(a => <ArmouryRack key={a.id} a={a} />)}
+      <div className="muted tiny">
+        Drag a weapon onto a man's slot in the crew list of the lieutenant window to equip him (what he had goes back on
+        the rack), or from his slot onto a rack to leave it there. Between weeks it is done at once; in the week he takes
+        it when he next calls at that armoury. Any of your men passing an armoury fills an empty slot from it.
+        {loose > 0 && ` ${loose === 1 ? 'One weapon is' : `${loose} weapons are`} lying in the street where men fell.`}
+      </div>
     </div>
   );
 }

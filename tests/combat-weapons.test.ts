@@ -2,7 +2,9 @@ import { CLOSE_COMBAT_STAMINA } from '../src/sim/closeCombat';
 import { WALK_SPEED } from '../src/sim/constants';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { defaultGameOptions } from '../src/app/newGame';
-import { issueOrder, transferWeapon } from '../src/sim/api';
+import { buyWeapon, issueOrder, transferWeapon } from '../src/sim/api';
+import { tickArmoury } from '../src/sim/armoury';
+import { buildingDoor } from '../src/sim/world';
 import { tickOrders } from '../src/sim/execution';
 import { Sim } from '../src/sim/sim';
 import { tickCombat } from '../src/sim/systems/combat';
@@ -46,10 +48,13 @@ describe('finite firearm allocation', () => {
   it('assigns each mixed-stock firearm to exactly one person without consuming stock', () => {
     const { w, team, people } = scene(4);
     team.weapons.tommy = 1; team.weapons.pistol = 2;
-    const before = JSON.stringify(w);
+    // The guns on the books are put in the men's hands once (armoury.ts); after that the allocation changes nothing.
     const loadout = allocateWeapons(w);
     expect(people.map(p => loadout.get(p.id))).toEqual(['tommy', 'pistol', 'pistol', undefined]);
+    const before = JSON.stringify(w);
+    expect([...allocateWeapons(w)]).toEqual([...loadout]);
     expect(JSON.stringify(w)).toBe(before);
+    expect(team.weapons).toMatchObject({ tommy: 1, pistol: 2 });
   });
   it('gives priority work precedence over shooting skill, then equips the best remaining shot', () => {
     const { w, gang, team, people } = scene(3);
@@ -66,10 +71,23 @@ describe('finite firearm allocation', () => {
     const { w, gang, team, people } = scene(2);
     gang.weapons.rifle = 1;
     const boss = w.people[gang.bossId]; boss.status = 'active';
+    const hq = Object.values(w.buildings).find(b => b.isHQ && b.ownerGangId === gang.id)!;
+    // The cache is kept in the armoury: the boss arms himself there.
+    expect(allocateWeapons(w).has(boss.id)).toBe(false);
+    boss.pos = buildingDoor(w, hq);
+    tickArmoury(w);
     expect(allocateWeapons(w).get(boss.id)).toBe('rifle');
     expect(people.some(p => allocateWeapons(w).has(p.id))).toBe(false);
+    // The boss carries it: only a gun on a rack changes hands.
+    expect(transferWeapon(w, gang.id, 'rifle', team.id, true).ok).toBe(false);
+    gang.cash = 10000;
+    expect(buyWeapon(w, gang.id, 'rifle').ok).toBe(true);
     expect(transferWeapon(w, gang.id, 'rifle', team.id, true).ok).toBe(true);
-    expect(allocateWeapons(w).has(boss.id)).toBe(false);
+    expect(allocateWeapons(w).get(boss.id)).toBe('rifle');
+    expect(allocateWeapons(w).has(people[0].id)).toBe(false);
+    // It waits in the HQ armoury until a man of the crew calls there.
+    people[0].pos = buildingDoor(w, hq);
+    tickArmoury(w);
     expect(allocateWeapons(w).get(people[0].id)).toBe('rifle');
   });
   it('excludes unavailable people and foreign or stale crew references', () => {
@@ -106,6 +124,10 @@ describe('finite firearm allocation', () => {
     const loadout = allocateWeapons(w);
     people[0].status = 'dead';
     expect(loadout.has(people[1].id)).toBe(false);
+    // Dropped where he fell, and picked up by the man standing over him.
+    expect(allocateWeapons(w).has(people[1].id)).toBe(false);
+    expect(w.looseGuns).toHaveLength(1);
+    tickArmoury(w);
     expect(allocateWeapons(w).get(people[1].id)).toBe('pistol');
   });
 });

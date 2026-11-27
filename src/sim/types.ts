@@ -621,6 +621,31 @@ export interface FleetVehicle {
   no?: number;
 }
 
+/**
+ * One gun a gang owns (playtest, 26 November): carried by one of its men, or
+ * kept in the armoury of one of its offices or warehouses (armoury.ts). The
+ * crew sheets still count how many of each kind a crew and the cache hold;
+ * there is one of these for each.
+ */
+export interface Gun {
+  kind: WeaponId;
+  gangId: ID;
+  /** The crew whose stock it is, or null for the gang's unassigned guns. */
+  teamId: ID | null;
+  /** The man carrying it. */
+  carrierId?: ID;
+  /** The building whose armoury it is kept in. */
+  armouryId?: ID;
+  /** Kept for this man (the player handed it to him); he takes it when he next calls at the armoury. */
+  reservedFor?: ID;
+}
+
+/** A gun dropped by a man who fell, lying in the street until someone picks it up. */
+export interface LooseGun {
+  kind: WeaponId;
+  pos: Vec2;
+}
+
 export type DiplomacyLevel = 'alliance' | 'peace' | 'ceasefire' | 'aggression' | 'war';
 export const DIPLOMACY_ORDER: DiplomacyLevel[] = [
   'alliance',
@@ -962,6 +987,12 @@ export interface WorldState {
   /** Saved specialist visits, retained for the current/previous week's reports. */
   specialistJobs?: Record<ID, SpecialistJob>;
   vehicleFleet?: Record<string, FleetVehicle>;
+  /** Every gun owned by a gang, by a key of its own (armoury.ts). */
+  guns?: Record<string, Gun>;
+  /** Guns lying in the street where their men fell. */
+  looseGuns?: LooseGun[];
+  /** The number for the next gun's key. */
+  nextGunNo?: number;
   /** Automatic business haulage; employees, not the boss's allocated hood cars. */
   goodsDeliveries?: Record<ID, GoodsDelivery>;
   /** Actual gross and handed-over money for audits; never inferred from loyalty later. */

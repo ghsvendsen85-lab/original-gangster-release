@@ -23,6 +23,7 @@ import { addMessage, addNews } from './events';
 import { beginWeekOrders, disbandTeam, promoteToLieutenant, replaceLieutenant, tickOrders } from './execution';
 import { Rng } from './rng';
 import { allocateWeapons } from './weapons';
+import { tickArmoury } from './armoury';
 import { tickAmbient } from './systems/ambient';
 import { scanStreetSlice, tickTraffic, trafficContext } from './traffic';
 import { TRAM_RIDING, tickTramRiding } from './tramRiding';
@@ -286,6 +287,8 @@ export class Sim {
     // Pedestrians catch, board, ride and leave the street trams. Off, as in the
     // shipped game, where nothing sets the walk order's riding flag.
     if (TRAM_RIDING) tickTramRiding(w);
+    // Men at an armoury arm themselves; dropped guns are picked up.
+    tickArmoury(w);
     const loadout = allocateWeapons(w);
     const peaceFireExclusions = capturePeaceFireExclusions(w, loadout);
 

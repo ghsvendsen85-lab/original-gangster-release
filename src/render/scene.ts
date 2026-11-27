@@ -406,6 +406,8 @@ export class CityRenderer {
   private kerbScratch = { x: 0, y: 0 };
   /** Invisible selection envelopes preserve reliable picking at the original's smaller human scale. */
   private agentMesh!: THREE.InstancedMesh;
+  /** Guns dropped in the street where men fell (armoury.ts). */
+  private looseGunMesh!: THREE.InstancedMesh;
   private agentIds: ID[] = [];
   /** Your own colour at your people's feet, and the hand and bars over waiting and arrested figures. */
   private footRings!: InstancePool;
@@ -1089,6 +1091,15 @@ export class CityRenderer {
     this.agentMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.agentMesh.count = 0;
     this.scene.add(this.agentMesh);
+
+    const gunGeo = new THREE.BoxGeometry(.85, .1, .2);
+    gunGeo.translate(0, .05, 0);
+    this.looseGunMesh = new THREE.InstancedMesh(gunGeo, new THREE.MeshLambertMaterial({ color: 0x1b1b1b }), 64);
+    this.looseGunMesh.name = 'loose-guns';
+    this.looseGunMesh.frustumCulled = false;
+    this.looseGunMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.looseGunMesh.count = 0;
+    this.scene.add(this.looseGunMesh);
 
     // Your colour at the feet: a flat ring under each of your own people.
     const ringGeo = new THREE.RingGeometry(0.42, 0.51, 24);
@@ -2469,6 +2480,16 @@ export class CityRenderer {
       const at=previewVehicle(car,car.pos,this.subMinute,{x:0,y:0});
       this.pullIn(key,at,true);
       this.drivers.push({x:at.x,z:at.y,facing:roadHeading(w,car.pos),hex:0x252525,kind:car.kind});
+    }
+    {
+      const loose = (w.looseGuns ?? []).slice(0, 64);
+      loose.forEach((g, n) => {
+        this.dummy.position.set(g.pos.x, streetSurfaceHeight(this.world, g.pos.x, g.pos.y) + .01, g.pos.y);
+        this.dummy.rotation.set(0, (n * 2.39996) % (Math.PI * 2), 0); this.dummy.scale.setScalar(1); this.dummy.updateMatrix();
+        this.looseGunMesh.setMatrixAt(n, this.dummy.matrix);
+      });
+      this.looseGunMesh.count = loose.length;
+      this.looseGunMesh.instanceMatrix.needsUpdate = true;
     }
     for (const driver of deliveryDrivers) {
       const motion = this.actorMotion.sample(driver.id, driver.pos.x, driver.pos.y, driver.walking, driver.facing);

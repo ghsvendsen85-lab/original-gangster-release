@@ -8,6 +8,7 @@ import { Sim } from '../src/sim/sim';
 import { transportPlan } from '../src/sim/transport';
 import type { Person } from '../src/sim/types';
 import { allocateWeapons } from '../src/sim/weapons';
+import { armForTheWeek } from '../src/sim/armoury';
 import { MOTORCYCLE_SEAT, VEHICLE_PROFILE, vehicleGeometry } from '../src/render/vehicles';
 import { longGun } from '../src/render/weaponHandling';
 import { staffFirstCrew } from './helpers/crew';
@@ -43,10 +44,14 @@ describe('the B.A.R.', () => {
     const { w, gang, team } = game();
     for (const key of WEAPON_ORDER) team.weapons[key] = 0;
     expect(buyWeapon(w, gang.id, 'bar', team.id).ok).toBe(true);
-    team.weapons.tommy = 1;
+    expect(buyWeapon(w, gang.id, 'tommy', team.id).ok).toBe(true);
+    // Bought guns wait in the armoury; at the start of the week the best shot takes the B.A.R.
+    armForTheWeek(w);
     const loadout = allocateWeapons(w);
-    const crew = [team.lieutenantId, ...team.memberIds];
-    expect(crew.filter(id => loadout.get(id) === 'bar')).toHaveLength(1);
+    const crew = [team.lieutenantId, ...team.memberIds].map(id => w.people[id]).filter(p => p.status === 'active');
+    const best = [...crew].sort((a, b) => b.skills.firearms - a.skills.firearms || a.id - b.id)[0];
+    expect(crew.filter(p => loadout.get(p.id) === 'bar')).toHaveLength(1);
+    expect(loadout.get(best.id)).toBe('bar');
   });
 });
 

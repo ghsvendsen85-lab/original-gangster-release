@@ -4,7 +4,7 @@ import { yieldForInput } from '../yieldForInput';
 import { blockRect } from './cityLayout';
 import { tramCount, tramLineValid } from './trams';
 import { BLOCK_MODULE_BY_ID, moduleFacing, moduleRect, moduleSetback } from './blockModules';
-import { MAX_TEAM_SIZE, MINUTES_PER_WEEK, VEHICLES } from './constants';
+import { MAX_TEAM_SIZE, MINUTES_PER_WEEK, VEHICLES, WEAPONS } from './constants';
 import { onRoad, vehiclePathOnRoad } from './vehicleNavigation';
 import { peopleList, buildingList } from './entityLists';
 
@@ -175,6 +175,14 @@ function validateReferences(w: WorldState, candidate: WorldState): void {
       v.cargo.purpose==='return'&&v.cargo.orderId!=null||
       v.cargo.purpose!=='return'&&(v.cargo.orderId==null||w.orders[v.cargo.orderId]?.type!==v.cargo.purpose||w.orders[v.cargo.orderId]?.gangId!==v.gangId)))throw Error('Save has invalid vehicle cargo.');
   }
+  // Guns (armoury.ts): stale references (a crew broken up, a man gone, a building lost) and a mismatch
+  // with the crew books are put right on loading, as in play; only a malformed gun is damage.
+  const idOk=(v:unknown)=>v==null||Number.isSafeInteger(v);
+  for(const [key,g] of Object.entries(w.guns??{})){
+    if(!/^g\d+$/.test(key)||!WEAPONS[g.kind]||!Number.isSafeInteger(g.gangId)||!idOk(g.teamId)||!idOk(g.carrierId)||
+      !idOk(g.armouryId)||!idOk(g.reservedFor))throw Error('Save has an invalid gun.');
+  }
+  for(const l of w.looseGuns??[])if(!WEAPONS[l.kind]||!Number.isFinite(l.pos.x)||!Number.isFinite(l.pos.y))throw Error('Save has an invalid dropped gun.');
   for(const p of Object.values(w.people))if(p.vehicleKey&&!w.vehicleFleet?.[p.vehicleKey]?.occupantIds.includes(p.id))throw Error('Save has a missing vehicle reservation.');
   for (const [i, b] of w.blocks.entries()) if (b.id !== i || b.lotIds.some(id => !w.lots[id])) throw Error('Save has damaged city blocks.');
   if (!w.cityLayout && w.blocks.some(b => b.layout)) throw Error('Save is missing its city layout.');

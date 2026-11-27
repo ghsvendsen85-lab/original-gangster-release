@@ -31,6 +31,7 @@ export { cancelSpecialistJob } from './specialistJobs';
 import { addMessage, reportBusinessMove } from './events';
 import { prepareStreetPursuit, streetOrderRange } from './streetPursuit';
 import { allocateWeapons } from './weapons';
+import { assignGun, equipGun, gunInStore, passGun, removeGun, stockGun, syncArmoury, unequipGun, type GunHolder, type GunSlot } from './armoury';
 import {
   buildingValue,
   disbandTeam,
@@ -761,11 +762,9 @@ export function buyWeapon(w: WorldState, gangId: ID, weapon: WeaponId, teamId?: 
   const cost = WEAPONS[weapon].cost;
   if (gang.cash < cost) return fail('You cannot afford it.');
   payCash(w, gang, 'purchases', cost, 'capital');
-  if (teamId != null && w.teams[teamId]) {
-    w.teams[teamId].weapons[weapon] = (w.teams[teamId].weapons[weapon] ?? 0) + 1;
-  } else {
-    gang.weapons[weapon] = (gang.weapons[weapon] ?? 0) + 1;
-  }
+  // Delivered to the armoury at the HQ; the crew take it when they next call there.
+  syncArmoury(w);
+  stockGun(w, gangId, weapon, teamId != null && w.teams[teamId] ? teamId : null);
   if (w.options.tutorialId === 4 && gang.isPlayer) {
     (w.tutorialActions ??= {}).weaponBought = true;
   }
@@ -779,7 +778,10 @@ export function sellWeapon(w: WorldState, gangId: ID, weapon: WeaponId, teamId?:
   if (!WEAPONS[weapon]) return fail('No such weapon.');
   const store = teamId != null && w.teams[teamId] ? w.teams[teamId].weapons : gang.weapons;
   if ((store[weapon] ?? 0) <= 0) return fail('You have none to sell.');
-  store[weapon]--;
+  // Only a gun on the rack can be sold: one a man carries is his.
+  const gun = gunInStore(w, gangId, teamId != null && w.teams[teamId] ? teamId : null, weapon);
+  if (!gun) return fail('None of those is in an armoury. Only a gun in an armoury can be sold.');
+  removeGun(w, gun[0]);
   receiveAssetCash(w, gang, Math.round(WEAPONS[weapon].cost * 0.5), WEAPONS[weapon].cost);
   return ok(`Sold a ${WEAPONS[weapon].name}.`);
 }
@@ -795,16 +797,51 @@ export function transferWeapon(
   const team = w.teams[teamId];
   if (!gang || !team || team.gangId !== gangId) return fail('No such crew.');
   if (!WEAPONS[weapon]) return fail('No such weapon.');
-  if (toTeam) {
-    if ((gang.weapons[weapon] ?? 0) <= 0) return fail('None in the cache.');
-    gang.weapons[weapon]--;
-    team.weapons[weapon] = (team.weapons[weapon] ?? 0) + 1;
-  } else {
-    if ((team.weapons[weapon] ?? 0) <= 0) return fail('The crew has none.');
-    team.weapons[weapon]--;
-    gang.weapons[weapon] = (gang.weapons[weapon] ?? 0) + 1;
-  }
+  if (toTeam && (gang.weapons[weapon] ?? 0) <= 0) return fail('No unassigned ones.');
+  if (!toTeam && (team.weapons[weapon] ?? 0) <= 0) return fail('The crew has none.');
+  // Only a gun on a rack changes hands; one a man carries stays with him.
+  const gun = gunInStore(w, gangId, toTeam ? null : teamId, weapon);
+  if (!gun) return fail('Every one is being carried. Only a gun in an armoury can change hands.');
+  assignGun(w, gangId, gun[0], toTeam ? { teamId } : 'cache');
   return ok();
+}
+
+/** Hand one gun on a rack to a crew, to the unassigned stock, or keep it for one man. */
+export function assignWeapon(w: WorldState, gangId: ID, key: string, to: GunHolder): ApiResult {
+  if (!w.gangs[gangId]) return fail('No such gang.');
+  const refused = assignGun(w, gangId, key, to);
+  if (refused) return fail(refused);
+  const g = w.guns![key];
+  const p = typeof to === 'object' && 'personId' in to ? w.people[to.personId] : undefined;
+  return ok(p ? `The ${WEAPONS[g.kind].name} is kept for ${p.name}; he takes it when he next calls at the armoury.` : undefined);
+}
+
+/** The inventory grid (playtest, 26 November): a weapon from a rack into a man's slot. */
+export function equipWeapon(w: WorldState, gangId: ID, key: string, personId: ID): ApiResult {
+  const r = equipGun(w, gangId, key, personId);
+  return r.ok ? ok(r.message) : fail(r.message);
+}
+
+/** The inventory grid: a weapon out of a man's slot onto a rack. */
+export function unequipWeapon(w: WorldState, gangId: ID, personId: ID, slot: GunSlot, armouryId?: ID): ApiResult {
+  const r = unequipGun(w, gangId, personId, slot, armouryId);
+  return r.ok ? ok(r.message) : fail(r.message);
+}
+
+/** The inventory grid: a weapon from one man's slot to another's. */
+export function passWeapon(w: WorldState, gangId: ID, fromId: ID, slot: GunSlot, toId: ID): ApiResult {
+  const r = passGun(w, gangId, fromId, slot, toId);
+  return r.ok ? ok(r.message) : fail(r.message);
+}
+
+/** Sell one gun on a rack. */
+export function sellGun(w: WorldState, gangId: ID, key: string): ApiResult {
+  const gang = w.gangs[gangId], g = w.guns?.[key];
+  if (!gang || !g || g.gangId !== gangId) return fail('No such gun.');
+  if (g.carrierId != null) return fail('A man is carrying it. Only a gun in an armoury can be sold.');
+  removeGun(w, key);
+  receiveAssetCash(w, gang, Math.round(WEAPONS[g.kind].cost * 0.5), WEAPONS[g.kind].cost);
+  return ok(`Sold a ${WEAPONS[g.kind].name}.`);
 }
 
 export function buyVehicle(w: WorldState, gangId: ID, vehicle: VehicleId, teamId?: ID): ApiResult {

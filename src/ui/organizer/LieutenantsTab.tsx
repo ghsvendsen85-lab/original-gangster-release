@@ -20,7 +20,8 @@ import { ConfirmDialog, Dial, Empty, Hint, Icon, Kicker, Pill, SkillList, Stamp 
 import { Portrait } from '../Portrait';
 import { resourceDragProps, useResourceDrop } from '../resourceDrag';
 import { Advisor } from './Advisor';
-import { ABSENT, PayRoll, hours, orderCost } from './RightSheet';
+import { ABSENT, KitSlots, PayRoll, hours, orderCost } from './RightSheet';
+import { crewInventory } from '../../sim/armoury';
 import { orderSkillText } from '../../sim/orderSkills';
 
 type Mode = 'orders' | 'reports';
@@ -409,6 +410,16 @@ export function LieutenantsTab() {
                 <Kicker style={{ marginBottom: 4 }}>
                   {team.name} · {members.length} hood{members.length === 1 ? '' : 's'}
                 </Kicker>
+                {(() => {
+                  const kit = crewInventory(w, team);
+                  const slotsOf = (id: ID) => kit.find(k => k.id === id)?.slots ?? { large: null, small: null, explosive: null };
+                  return (<>
+                <div className="roster-row">
+                  <button className="row-line" onClick={() => setSheet(sheet?.kind === 'person' && sheet.id === lt.id ? null : { kind: 'person', id: lt.id })} title="Click for his details">
+                    <span className="nm">{lt.name} <span className="muted tiny">· Lt.</span></span>
+                  </button>
+                  <KitSlots personId={lt.id} slots={slotsOf(lt.id)} />
+                </div>
                 {members.length === 0 ? (
                   <Empty>Nobody yet. Drag hoods here from the pool.</Empty>
                 ) : (
@@ -416,8 +427,8 @@ export function LieutenantsTab() {
                     const absent = ABSENT[m.status];
                     const job = orders.find((o) => o.opts.preferredHoodId === m.id || o.assignedIds.includes(m.id));
                     return (
+                      <div key={m.id} className="roster-row">
                       <button
-                        key={m.id}
                         className={`row-line${m.pay < m.payDemand ? ' unhappy' : ''}`}
                         onClick={() => setSheet(sheet?.kind === 'person' && sheet.id === m.id ? null : { kind: 'person', id: m.id })}
                         {...resourceDragProps({ kind: 'hood', id: m.id })}
@@ -437,9 +448,13 @@ export function LieutenantsTab() {
                           {absent && (m.status === 'kidnapped' ? ' · tied to a chair' : m.status === 'arrested' || m.status === 'onTrial' ? ' · behind bars' : '')}
                         </span>
                       </button>
+                      {m.status !== 'dead' && <KitSlots personId={m.id} slots={slotsOf(m.id)} />}
+                      </div>
                     );
                   })
                 )}
+                  </>);
+                })()}
               </>
             )}
           </div>

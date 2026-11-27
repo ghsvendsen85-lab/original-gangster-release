@@ -370,7 +370,7 @@
             ]
           }
         },
-        "goodsDeliveries": {
+        "guns": {
           "optional": true,
           "shape": {
             "union": [
@@ -380,7 +380,7 @@
             ]
           }
         },
-        "personTakings": {
+        "looseGuns": {
           "optional": true,
           "shape": {
             "union": [
@@ -390,10 +390,40 @@
             ]
           }
         },
+        "nextGunNo": {
+          "optional": true,
+          "shape": {
+            "union": [
+              {
+                "type": "number"
+              }
+            ]
+          }
+        },
+        "goodsDeliveries": {
+          "optional": true,
+          "shape": {
+            "union": [
+              {
+                "ref": "T103"
+              }
+            ]
+          }
+        },
+        "personTakings": {
+          "optional": true,
+          "shape": {
+            "union": [
+              {
+                "ref": "T105"
+              }
+            ]
+          }
+        },
         "auditResults": {
           "optional": false,
           "shape": {
-            "ref": "T103"
+            "ref": "T107"
           }
         },
         "weekLog": {
@@ -5726,6 +5756,136 @@
     },
     "T100": {
       "object": {
+        "kind": {
+          "optional": false,
+          "shape": {
+            "union": [
+              {
+                "literal": "explosives"
+              },
+              {
+                "literal": "pistol"
+              },
+              {
+                "literal": "shotgun"
+              },
+              {
+                "literal": "rifle"
+              },
+              {
+                "literal": "tommy"
+              },
+              {
+                "literal": "twinPistols"
+              },
+              {
+                "literal": "bar"
+              }
+            ]
+          }
+        },
+        "gangId": {
+          "optional": false,
+          "shape": {
+            "type": "number"
+          }
+        },
+        "teamId": {
+          "optional": false,
+          "shape": {
+            "union": [
+              {
+                "literal": null
+              },
+              {
+                "type": "number"
+              }
+            ]
+          }
+        },
+        "carrierId": {
+          "optional": true,
+          "shape": {
+            "union": [
+              {
+                "type": "number"
+              }
+            ]
+          }
+        },
+        "armouryId": {
+          "optional": true,
+          "shape": {
+            "union": [
+              {
+                "type": "number"
+              }
+            ]
+          }
+        },
+        "reservedFor": {
+          "optional": true,
+          "shape": {
+            "union": [
+              {
+                "type": "number"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "T101": {
+      "array": {
+        "ref": "T102"
+      }
+    },
+    "T102": {
+      "object": {
+        "kind": {
+          "optional": false,
+          "shape": {
+            "union": [
+              {
+                "literal": "explosives"
+              },
+              {
+                "literal": "pistol"
+              },
+              {
+                "literal": "shotgun"
+              },
+              {
+                "literal": "rifle"
+              },
+              {
+                "literal": "tommy"
+              },
+              {
+                "literal": "twinPistols"
+              },
+              {
+                "literal": "bar"
+              }
+            ]
+          }
+        },
+        "pos": {
+          "optional": false,
+          "shape": {
+            "ref": "T10"
+          }
+        }
+      }
+    },
+    "T103": {
+      "object": {},
+      "values": {
+        "ref": "T104"
+      }
+    },
+    "T104": {
+      "object": {
         "sourceId": {
           "optional": false,
           "shape": {
@@ -5815,13 +5975,13 @@
         }
       }
     },
-    "T101": {
+    "T105": {
       "object": {},
       "values": {
-        "ref": "T102"
+        "ref": "T106"
       }
     },
-    "T102": {
+    "T106": {
       "object": {
         "week": {
           "optional": false,
@@ -5843,7 +6003,7 @@
         }
       }
     },
-    "T103": {
+    "T107": {
       "object": {},
       "values": {
         "union": [
@@ -5851,12 +6011,12 @@
             "literal": null
           },
           {
-            "ref": "T104"
+            "ref": "T108"
           }
         ]
       }
     },
-    "T104": {
+    "T108": {
       "object": {
         "personId": {
           "optional": false,
